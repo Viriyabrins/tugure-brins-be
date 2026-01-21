@@ -1,0 +1,49 @@
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const envFile = process.env.ENV_FILE || `.env.${process.env.NODE_ENV || 'development'}`;
+const resolvedPath = path.resolve(__dirname, '..', '..', envFile);
+
+dotenv.config({ path: resolvedPath });
+
+const parseDemoTokens = (list = '') =>
+  list
+    .split(';')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [token, role, fullName, email] = entry.split(':');
+      return {
+        token: token?.trim(),
+        role: role?.trim(),
+        fullName: fullName?.trim(),
+        email: email?.trim()
+      };
+    })
+    .filter((item) => item.token && item.email);
+
+const parseJson = (value) => {
+  if (!value) return {};
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    console.warn('Failed to parse JSON value, falling back to object', error?.message);
+    return {};
+  }
+};
+
+const config = {
+  env: process.env.NODE_ENV || 'development',
+  port: Number(process.env.PORT) || 4000,
+  databaseUrl: process.env.DATABASE_URL,
+  serviceToken: process.env.SERVICE_TOKEN,
+  demoPassword: process.env.DEMO_PASSWORD,
+  demoUsers: parseDemoTokens(process.env.DEMO_TOKENS),
+  appId: process.env.APP_ID,
+  publicSettings: parseJson(process.env.APP_PUBLIC_SETTINGS),
+  logLevel: process.env.LOG_LEVEL || 'info'
+};
+
+export default config;

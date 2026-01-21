@@ -1,0 +1,439 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AuditLog {
+  id          String  @id @default(cuid())
+  action      String
+  module      String
+  entity_type String?
+  entity_id   String?
+  old_value   String?
+  new_value   String?
+  user_email  String
+  user_role   String?
+  ip_address  String?
+  reason      String?
+  @@map("auditlog")
+}
+
+model Batch {
+  batch_id                String   @id
+  batch_month             Int?
+  batch_year              Int?
+  contract_id             String
+  total_records           Int      @default(0)
+  total_exposure          Decimal  @default(0) @db.Decimal(25, 2)
+  total_premium           Decimal  @default(0) @db.Decimal(25, 2)
+  final_exposure_amount   Decimal  @default(0) @db.Decimal(25, 2)
+  final_premium_amount    Decimal  @default(0) @db.Decimal(25, 2)
+  debtor_review_completed Boolean  @default(false)
+  batch_ready_for_nota    Boolean  @default(false)
+  status                  String   @default("Uploaded")
+  operational_locked      Boolean  @default(false)
+  reopen_requested_by     String?
+  reopen_requested_date   DateTime?
+  reopen_reason           String?
+  reopen_impact           String?
+  reopen_approved_by      String?
+  reopen_approved_date    DateTime?
+  validated_by            String?
+  validated_date          DateTime?
+  matched_by              String?
+  matched_date            DateTime?
+  approved_by             String?
+  approved_date           DateTime?
+  nota_issued_by          String?
+  nota_issued_date        DateTime?
+  branch_confirmed_by     String?
+  branch_confirmed_date   DateTime?
+  paid_by                 String?
+  paid_date               DateTime?
+  closed_by               String?
+  closed_date             DateTime?
+  rejection_reason        String?
+  @@map("batch")
+}
+
+model Bordero {
+  bordero_id   String   @id
+  contract_id  String
+  batch_id     String
+  period       String
+  total_debtors Int?
+  total_exposure Decimal? @db.Decimal(25, 2)
+  total_premium  Decimal? @db.Decimal(25, 2)
+  currency     String   @default("IDR")
+  status       String   @default("GENERATED")
+  reviewed_by  String?
+  reviewed_date DateTime?
+  finalized_by String?
+  finalized_date DateTime?
+  @@map("bordero")
+}
+
+model Claim {
+  claim_no                String   @id
+  policy_no               String?
+  nomor_sertifikat        String?
+  nama_tertanggung        String
+  no_ktp_npwp             String?
+  no_fasilitas_kredit     String?
+  bdo_premi               String?
+  tanggal_realisasi_kredit DateTime?
+  plafond                 Decimal? @db.Decimal(25, 2)
+  max_coverage            Decimal? @db.Decimal(25, 2)
+  kol_debitur             String?
+  dol                     DateTime?
+  nilai_klaim             Decimal   @db.Decimal(25, 2)
+  share_tugure_percentage Decimal? @db.Decimal(5, 2)
+  share_tugure_amount     Decimal? @db.Decimal(25, 2)
+  check_bdo_premi         Boolean   @default(false)
+  batch_id                String?
+  version_no              Int       @default(1)
+  status                  String    @default("Draft")
+  debtor_id               String?
+  contract_id             String?
+  checked_by              String?
+  checked_date            DateTime?
+  doc_verified_by         String?
+  doc_verified_date       DateTime?
+  invoiced_by             String?
+  invoiced_date           DateTime?
+  paid_by                 String?
+  paid_date               DateTime?
+  rejection_reason        String?
+  reviewed_by             String?
+  review_date             DateTime?
+  @@map("claim")
+}
+
+model Contract {
+  contract_number    String   @id
+  contract_name      String
+  cedant             String   @default("BRINS")
+  reinsurer          String   @default("TUGURE")
+  credit_type        String
+  coverage_percentage Decimal? @db.Decimal(5, 2)
+  premium_rate       Decimal? @db.Decimal(5, 2)
+  start_date         DateTime?
+  end_date           DateTime?
+  status             String   @default("ACTIVE")
+  currency           String   @default("IDR")
+  @@map("contract")
+}
+
+model DebitCreditNote {
+  note_number       String   @id
+  note_type         String
+  original_nota_id  String
+  batch_id          String
+  contract_id       String
+  adjustment_amount Decimal  @db.Decimal(25, 2)
+  reason_code       String
+  reason_description String?
+  status            String   @default("Draft")
+  drafted_by        String?
+  drafted_date      DateTime?
+  reviewed_by       String?
+  reviewed_date     DateTime?
+  approved_by       String?
+  approved_date     DateTime?
+  acknowledged_by   String?
+  acknowledged_date DateTime?
+  rejection_reason  String?
+  currency          String   @default("IDR")
+  @@map("debitcreditnote")
+}
+
+model Debtor {
+  id                      String   @id @default(cuid())
+  cover_id                Int?
+  program_id              String?
+  batch_id                String
+  nomor_rekening_pinjaman String?
+  nomor_peserta           String
+  loan_type               String?
+  loan_type_desc          String?
+  cif_rekening_pinjaman   String?
+  jenis_pengajuan_desc    String?
+  jenis_covering_desc     String?
+  tanggal_mulai_covering  DateTime?
+  tanggal_akhir_covering  DateTime?
+  plafon                  Decimal? @db.Decimal(25, 2)
+  nominal_premi           Decimal? @db.Decimal(25, 2)
+  premi_percentage        Decimal? @db.Decimal(5, 2)
+  ric_percentage          Decimal? @db.Decimal(5, 2)
+  bf_percentage           Decimal? @db.Decimal(5, 2)
+  net_premi               Decimal? @db.Decimal(25, 2)
+  unit_code               String?
+  unit_desc               String?
+  branch_desc             String?
+  region_desc             String?
+  nama_peserta            String
+  alamat_usaha            String?
+  nomor_perjanjian_kredit String?
+  tanggal_terima          DateTime?
+  tanggal_validasi        DateTime?
+  teller_premium_date     DateTime?
+  status_aktif           Int?
+  remark_premi           String?
+  flag_restruktur        Int?
+  kolektabilitas          Int?
+  contract_id             String?
+  version_no              Int      @default(1)
+  status                  String   @default("DRAFT")
+  is_locked               Boolean  @default(false)
+  rejection_reason        String?
+  validation_remarks      String?
+  @@map("debtor")
+}
+
+model Document {
+  id                String   @id @default(cuid())
+  debtor_id         String?
+  batch_id          String?
+  claim_id          String?
+  document_type     String?
+  document_name     String
+  file_url          String?
+  upload_date       DateTime?
+  expiry_date       DateTime?
+  status            String   @default("PENDING")
+  remarks           String?
+  version           Int      @default(1)
+  parent_document_id String?
+  uploaded_by       String?
+  @@map("document")
+}
+
+model EmailTemplate {
+  id             String  @id @default(cuid())
+  object_type    String
+  status_from    String?
+  status_to      String
+  recipient_role String
+  email_subject  String
+  email_body     String
+  is_active      Boolean @default(true)
+  @@map("emailtemplate")
+}
+
+model Invoice {
+  invoice_number    String   @id
+  bordero_id        String?
+  contract_id       String
+  period            String?
+  total_amount      Decimal  @db.Decimal(25, 2)
+  paid_amount       Decimal  @default(0) @db.Decimal(25, 2)
+  outstanding_amount Decimal  @db.Decimal(25, 2)
+  currency          String   @default("IDR")
+  due_date          DateTime?
+  status            String   @default("ISSUED")
+  @@map("invoice")
+}
+
+model MasterContract {
+  contract_id            String   @id
+  policy_no              String
+  program_id             String?
+  product_type           String
+  credit_type            String
+  loan_type              String?
+  loan_type_desc         String?
+  coverage_start_date    DateTime
+  coverage_end_date      DateTime
+  max_tenor_month        Int?
+  max_plafond            Decimal?  @db.Decimal(25, 2)
+  share_tugure_percentage Decimal? @db.Decimal(5, 2)
+  premium_rate           Decimal? @db.Decimal(5, 2)
+  ric_rate               Decimal? @db.Decimal(5, 2)
+  bf_rate                Decimal? @db.Decimal(5, 2)
+  allowed_kolektabilitas String?
+  allowed_region         String?
+  currency               String   @default("IDR")
+  remark                 String?
+  effective_status       String   @default("Draft")
+  version                Int      @default(1)
+  parent_contract_id     String?
+  effective_date         DateTime?
+  first_approved_by      String?
+  first_approved_date    DateTime?
+  second_approved_by     String?
+  second_approved_date   DateTime?
+  rejection_reason       String?
+  @@map("mastercontract")
+}
+
+model Nota {
+  nota_number         String  @id
+  nota_type           String
+  reference_id        String
+  contract_id         String
+  amount              Decimal @db.Decimal(25, 2)
+  currency            String  @default("IDR")
+  status              String  @default("Draft")
+  issued_by           String?
+  issued_date         DateTime?
+  confirmed_by        String?
+  confirmed_date      DateTime?
+  paid_date           DateTime?
+  payment_reference   String?
+  total_actual_paid   Decimal @default(0) @db.Decimal(25, 2)
+  reconciliation_status String @default("PENDING")
+  is_immutable        Boolean @default(false)
+  @@map("nota")
+}
+
+model Notification {
+  id            String  @id @default(cuid())
+  title         String
+  message       String
+  type          String  @default("INFO")
+  module        String?
+  reference_id  String?
+  reference_type String?
+  target_role   String
+  target_user   String?
+  is_read       Boolean @default(false)
+  action_url    String?
+  @@map("notification")
+}
+
+model NotificationSetting {
+  id                      String  @id @default(cuid())
+  full_name               String
+  user_email              String
+  user_role               String
+  notification_email      String?
+  whatsapp_number         String?
+  email_enabled           Boolean @default(true)
+  whatsapp_enabled        Boolean @default(false)
+  notify_batch_status     Boolean @default(true)
+  notify_record_status    Boolean @default(true)
+  notify_nota_status      Boolean @default(true)
+  notify_claim_status     Boolean @default(true)
+  notify_subrogation_status Boolean @default(true)
+  notify_bordero_status   Boolean @default(true)
+  notify_invoice_status   Boolean @default(true)
+  notify_reconciliation_status Boolean @default(true)
+  notify_payment_received Boolean @default(true)
+  notify_approval_required Boolean @default(true)
+  notify_document_verification Boolean @default(true)
+  @@map("notificationsetting")
+}
+
+model Payment {
+  payment_ref      String   @id
+  invoice_id       String?
+  intent_id        String?
+  contract_id      String?
+  amount           Decimal  @db.Decimal(25, 2)
+  payment_date     DateTime
+  currency         String   @default("IDR")
+  bank_reference   String?
+  match_status     String   @default("RECEIVED")
+  exception_type   String   @default("NONE")
+  matched_by       String?
+  matched_date     DateTime?
+  is_actual_payment Boolean @default(true)
+  @@map("payment")
+}
+
+model PaymentIntent {
+  intent_id     String   @id
+  invoice_id    String
+  contract_id   String?
+  payment_type  String   @default("FULL")
+  planned_amount Decimal @db.Decimal(25, 2)
+  planned_date  DateTime
+  remarks       String?
+  status        String   @default("DRAFT")
+  @@map("paymentintent")
+}
+
+model Reconciliation {
+  recon_id       String  @id
+  contract_id    String
+  period         String
+  total_invoiced Decimal @db.Decimal(25, 2)
+  total_paid     Decimal @db.Decimal(25, 2)
+  difference     Decimal @db.Decimal(25, 2)
+  currency       String  @default("IDR")
+  status         String  @default("IN_PROGRESS")
+  closed_by      String?
+  closed_date    DateTime?
+  remarks        String?
+  @@map("reconciliation")
+}
+
+model Record {
+  id              String  @id @default(cuid())
+  batch_id        String
+  debtor_id       String
+  record_status   String  @default("Accepted")
+  exposure_amount Decimal? @db.Decimal(25, 2)
+  premium_amount  Decimal? @db.Decimal(25, 2)
+  revision_reason String?
+  revision_count  Int     @default(0)
+  accepted_by     String?
+  accepted_date   DateTime?
+  rejected_by     String?
+  rejected_date   DateTime?
+  rejection_reason String?
+  @@map("record")
+}
+
+model SlaRule {
+  id                 String  @id @default(cuid())
+  rule_name          String
+  entity_type        String
+  trigger_condition  String
+  status_value       String?
+  duration_value     Int?
+  duration_unit      String  @default("HOURS")
+  notification_type  String  @default("BOTH")
+  recipient_role     String
+  email_subject      String?
+  email_body         String?
+  priority           String  @default("MEDIUM")
+  is_active          Boolean @default(true)
+  is_recurring       Boolean @default(false)
+  recurrence_interval Int?
+  last_triggered     DateTime?
+  trigger_count      Int     @default(0)
+  @@map("slarule")
+}
+
+model Subrogation {
+  subrogation_id String   @id
+  claim_id        String
+  debtor_id       String
+  recovery_amount Decimal  @db.Decimal(25, 2)
+  recovery_date   DateTime
+  status          String   @default("Draft")
+  invoiced_by     String?
+  invoiced_date   DateTime?
+  closed_by       String?
+  closed_date     DateTime?
+  remarks         String?
+  @@map("subrogation")
+}
+
+model SystemConfig {
+  id           String  @id @default(cuid())
+  config_type  String
+  config_key   String
+  config_value String
+  description  String?
+  is_active    Boolean @default(true)
+  effective_date DateTime?
+  version      Int     @default(1)
+  status       String  @default("APPROVED")
+  @@map("systemconfig")
+}

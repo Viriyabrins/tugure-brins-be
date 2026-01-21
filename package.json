@@ -1,0 +1,30 @@
+{
+  "name": "brin-be",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "cross-env NODE_ENV=development ENV_FILE=.env.development nodemon src/index.js",
+    "staging": "cross-env NODE_ENV=staging ENV_FILE=.env.staging node src/index.js",
+    "start": "cross-env NODE_ENV=production ENV_FILE=.env.production node src/index.js",
+    "lint": "eslint src --ext .js",
+    "test": "echo \"No tests yet\""
+  },
+  "dependencies": {
+    "@fastify/autoload": "^5.1.0",
+    "@fastify/cors": "^10.0.0",
+    "@prisma/client": "^5.10.0",
+    "cross-env": "^7.0.3",
+    "dotenv": "^16.1.4",
+    "fastify": "^5.4.0",
+    "fastify-plugin": "^4.5.0",
+    "pg": "^8.10.0",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.52.0",
+    "nodemon": "^3.0.2",
+    "pino-pretty": "^10.1.0",
+    "prisma": "^5.10.0"
+  }
+}
