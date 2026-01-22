@@ -42,6 +42,14 @@ export class EntityRepository {
       return rows.map((r) => ({ id: r.id, ...r }));
     }
 
+    if (prisma.batch && entity === 'Batch') {
+      const rows = await prisma.batch.findMany({ 
+        take: limit, 
+        orderBy: { batch_id: direction } 
+      });
+      return rows.map((r) => ({ id: r.batch_id, ...r }));
+    }
+
     if (prisma.claim && entity === 'Claim') {
       const rows = await prisma.claim.findMany({ take: limit, orderBy: { claim_no: direction } });
       return rows.map((r) => ({ id: r.claim_no, ...r }));
@@ -50,6 +58,11 @@ export class EntityRepository {
     if (prisma.bordero && entity === 'Bordero') {
       const rows = await prisma.bordero.findMany({ take: limit, orderBy: { bordero_id: direction } });
       return rows.map((r) => ({ id: r.bordero_id, ...r }));
+    }
+
+    if (prisma.subrogation && entity === 'Subrogation') {
+      const rows = await prisma.subrogation.findMany({ take: limit, orderBy: { subrogation_id: direction } });
+      return rows.map((r) => ({ id: r.subrogation_id, ...r }));
     }
 
     if (prisma.masterContract && entity === 'MasterContract') {
@@ -112,10 +125,25 @@ export class EntityRepository {
       return { id: record.id, ...record.payload };
     }
 
+    if (entity === 'Batch' && prisma.batch && prisma.batch.create) {
+      try {
+        const r = await prisma.batch.create({ data: payload });
+        return { id: r.batch_id, ...r };
+      } catch (error) {
+        console.error('Batch creation error:', error);
+        throw error;
+      }
+    }
+
     // For dedicated models, insert minimally if possible
     if (entity === 'Debtor' && prisma.debtor && prisma.debtor.create) {
-      const r = await prisma.debtor.create({ data: payload });
-      return { id: r.id, ...r };
+      try {
+        const r = await prisma.debtor.create({ data: payload });
+        return { id: r.id, ...r };
+      } catch (error) {
+        console.error('Debtor creation error:', error);
+        throw error;
+      }
     }
 
     if (entity === 'MasterContract' && prisma.masterContract && prisma.masterContract.create) {
@@ -128,6 +156,7 @@ export class EntityRepository {
 
   async update(entity, id, payload) {
     ensureEntity(entity);
+
     if (prisma.entityRecord && prisma.entityRecord.findUnique) {
       const existing = await prisma.entityRecord.findUnique({ where: { id } });
       if (!existing || existing.entityName !== entity) return null;
@@ -136,6 +165,13 @@ export class EntityRepository {
         data: { payload }
       });
       return { id: record.id, ...record.payload };
+    }
+
+    if (entity === 'Batch' && prisma.batch && prisma.batch.update) {
+      const existing = await prisma.batch.findUnique({ where: { batch_id: id } });
+      if (!existing) return null;
+      const r = await prisma.batch.update({ where: { batch_id: id }, data: payload });
+      return { id: r.batch_id, ...r };
     }
 
     // Dedicated model updates (Debtor)
