@@ -52,6 +52,11 @@ export class EntityRepository {
       return rows.map((r) => ({ id: r.bordero_id, ...r }));
     }
 
+    if (prisma.masterContract && entity === 'MasterContract') {
+      const rows = await prisma.masterContract.findMany({ take: limit, orderBy: { contract_id: direction } });
+      return rows.map((r) => ({ id: r.contract_id, ...r }));
+    }
+
     if (prisma.entityRecord && prisma.entityRecord.findMany) {
       const records = await prisma.entityRecord.findMany({
         where: { entityName: entity },
@@ -83,6 +88,11 @@ export class EntityRepository {
       return r ? { id: r.bordero_id, ...r } : null;
     }
 
+    if (prisma.masterContract && entity === 'MasterContract') {
+      const r = await prisma.masterContract.findUnique({ where: { contract_id: id } });
+      return r ? { id: r.contract_id, ...r } : null;
+    }
+
     if (!prisma.entityRecord || !prisma.entityRecord.findUnique) return null;
 
     const record = await prisma.entityRecord.findUnique({ where: { id } });
@@ -108,6 +118,11 @@ export class EntityRepository {
       return { id: r.id, ...r };
     }
 
+    if (entity === 'MasterContract' && prisma.masterContract && prisma.masterContract.create) {
+      const r = await prisma.masterContract.create({ data: payload });
+      return { id: r.contract_id, ...r };
+    }
+
     throw Object.assign(new Error('Create not supported for this entity in current schema'), { statusCode: 500 });
   }
 
@@ -129,6 +144,14 @@ export class EntityRepository {
       if (!existing) return null;
       const r = await prisma.debtor.update({ where: { id }, data: payload });
       return { id: r.id, ...r };
+    }
+
+    // Dedicated model updates (MasterContract)
+    if (entity === 'MasterContract' && prisma.masterContract && prisma.masterContract.update) {
+      const existing = await prisma.masterContract.findUnique({ where: { contract_id: id } });
+      if (!existing) return null;
+      const r = await prisma.masterContract.update({ where: { contract_id: id }, data: payload });
+      return { id: r.contract_id, ...r };
     }
 
     return null;
