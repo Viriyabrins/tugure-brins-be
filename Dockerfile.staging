@@ -12,12 +12,16 @@ ARG APP_GID=1000
 
 # Create non-root user and group early so we can run package install as unprivileged user
 RUN set -eux; \
-	if ! getent group appgroup >/dev/null 2>&1; then groupadd -g "${APP_GID}" appgroup; fi; \
+	# If a group with the requested GID already exists, reuse its name; otherwise create 'appgroup'
+	EXISTING_GNAME=$(getent group "${APP_GID}" | cut -d: -f1 || true); \
+	if [ -n "${EXISTING_GNAME}" ]; then GNAME="${EXISTING_GNAME}"; else GNAME=appgroup; fi; \
+	if ! getent group "${GNAME}" >/dev/null 2>&1; then groupadd -g "${APP_GID}" "${GNAME}"; fi; \
+	# Create the user with the requested UID and the chosen group name
 	if ! id -u appuser >/dev/null 2>&1; then \
-		useradd -u "${APP_UID}" -r -g appgroup -d /home/brins -m -s /bin/sh appuser; \
+		useradd -u "${APP_UID}" -r -g "${GNAME}" -d /home/brins -m -s /bin/sh appuser; \
 	fi; \
 	mkdir -p /app /home/brins; \
-	chown -R appuser:appgroup /home/brins /app
+	chown -R "${APP_UID}:${APP_GID}" /home/brins /app
 ENV HOME=/home/brins
 
 # Install dependencies (production only) as unprivileged user
