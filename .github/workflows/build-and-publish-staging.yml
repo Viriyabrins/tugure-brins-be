@@ -30,7 +30,7 @@ jobs:
           file: Dockerfile.staging
           push: true
           tags: |
-            ghcr.io/Viriyabrins/brins-be:staging-latest
+            ghcr.io/viriyabrins/brins-be:staging-latest
             
       - name: Save pushed image digest
         run: |
