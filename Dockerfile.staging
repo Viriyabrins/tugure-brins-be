@@ -10,23 +10,12 @@ ENV NODE_ENV=staging
 ARG APP_UID=1000
 ARG APP_GID=1000
 
-# Create or reuse the host-matching user 'brins' so container can run as that user
+# Ensure directories exist and set numeric ownership to avoid useradd/UID collisions
 RUN set -eux; \
-	# If a user 'brins' exists in base image, reuse it; otherwise create with provided UID/GID
-	if getent passwd brins >/dev/null 2>&1; then \
-		echo "user brins exists, using existing user"; \
-		BRINS_NAME=brins; \
-	else \
-		# Find or create group to own files
-		EXISTING_GNAME=$(getent group "${APP_GID}" | cut -d: -f1 || true); \
-		if [ -n "${EXISTING_GNAME}" ]; then GNAME="${EXISTING_GNAME}"; else GNAME=brins; fi; \
-		if ! getent group "${GNAME}" >/dev/null 2>&1; then groupadd -g "${APP_GID}" "${GNAME}"; fi; \
-		useradd -u "${APP_UID}" -r -g "${GNAME}" -d /home/brins -m -s /bin/sh brins; \
-		BRINS_NAME=brins; \
-	fi; \
 	mkdir -p /app /home/brins; \
 	chown -R "${APP_UID}:${APP_GID}" /home/brins /app
 ENV HOME=/home/brins
+USER ${APP_UID}:${APP_GID}
 
 # Install dependencies (production only) as unprivileged user
 # Copy package files first for Docker layer caching and ensure ownership
@@ -34,11 +23,10 @@ ENV HOME=/home/brins
 COPY --chown=${APP_UID}:${APP_GID} package.json package-lock.json* ./
 # Use npm ci when lockfile exists, otherwise fall back to npm install
 RUN set -eux; \
-	USERNAME=$(getent passwd "${APP_UID}" | cut -d: -f1 || echo brins); \
 	if [ -f package-lock.json ]; then \
-		su -s /bin/sh "${USERNAME}" -c "npm ci --loglevel=verbose" || su -s /bin/sh "${USERNAME}" -c "npm install --loglevel=verbose"; \
+		npm ci --loglevel=verbose || npm install --loglevel=verbose; \
 	else \
-		su -s /bin/sh "${USERNAME}" -c "npm install --loglevel=verbose"; \
+		npm install --loglevel=verbose; \
 	fi
 
 # Copy app files (set ownership to avoid a later expensive chown)
@@ -46,8 +34,7 @@ COPY --chown=${APP_UID}:${APP_GID} . .
 
 # Generate Prisma client during image build (if prisma is installed)
 RUN if command -v npx >/dev/null 2>&1 && [ -f node_modules/.bin/prisma ]; then \
-			USERNAME=$(getent passwd "${APP_UID}" | cut -d: -f1 || echo brins); \
-			su -s /bin/sh "${USERNAME}" -c "npx prisma generate"; \
+			npx prisma generate; \
 		else \
 			echo "prisma not available in image, skipping prisma generate"; \
 		fi
@@ -60,8 +47,7 @@ RUN if [ -n "${DATABASE_URL:-}" ]; then \
 			echo "DATABASE_URL build-arg provided — running 'npx prisma migrate deploy' during build (CI only)"; \
 			if command -v npx >/dev/null 2>&1 && [ -f node_modules/.bin/prisma ]; then \
 				export DATABASE_URL="${DATABASE_URL}"; \
-				USERNAME=$(getent passwd "${APP_UID}" | cut -d: -f1 || echo brins); \
-				su -s /bin/sh "${USERNAME}" -c "npx prisma migrate deploy" || echo "prisma migrate deploy failed; continuing without aborting build"; \
+				npx prisma migrate deploy || echo "prisma migrate deploy failed; continuing without aborting build"; \
 			else \
 				echo "prisma not available in image, skipping prisma migrate"; \
 			fi; \
@@ -76,6 +62,6 @@ ENV PORT=10011
 ENV HOST=0.0.0.0
 
 # Run as non-root user by default (works better with rootless Podman)
-USER brins
+USER ${APP_UID}:${APP_GID}
 # Default command (can be overridden by docker run args)
 CMD ["npm", "run", "staging"]
