@@ -34,21 +34,23 @@ ENV HOME=/home/brins
 COPY --chown=${APP_UID}:${APP_GID} package.json package-lock.json* ./
 # Use npm ci when lockfile exists, otherwise fall back to npm install
 RUN set -eux; \
-		if [ -f package-lock.json ]; then \
-				su -s /bin/sh brins -c "npm ci --loglevel=verbose" || su -s /bin/sh brins -c "npm install --loglevel=verbose"; \
-		else \
-			su -s /bin/sh brins -c "npm install --loglevel=verbose"; \
-		fi
+	USERNAME=$(getent passwd "${APP_UID}" | cut -d: -f1 || echo brins); \
+	if [ -f package-lock.json ]; then \
+		su -s /bin/sh "${USERNAME}" -c "npm ci --loglevel=verbose" || su -s /bin/sh "${USERNAME}" -c "npm install --loglevel=verbose"; \
+	else \
+		su -s /bin/sh "${USERNAME}" -c "npm install --loglevel=verbose"; \
+	fi
 
 # Copy app files (set ownership to avoid a later expensive chown)
 COPY --chown=${APP_UID}:${APP_GID} . .
 
 # Generate Prisma client during image build (if prisma is installed)
 RUN if command -v npx >/dev/null 2>&1 && [ -f node_modules/.bin/prisma ]; then \
-						su -s /bin/sh brins -c "npx prisma generate"; \
-				else \
-						echo "prisma not available in image, skipping prisma generate"; \
-				fi
+			USERNAME=$(getent passwd "${APP_UID}" | cut -d: -f1 || echo brins); \
+			su -s /bin/sh "${USERNAME}" -c "npx prisma generate"; \
+		else \
+			echo "prisma not available in image, skipping prisma generate"; \
+		fi
 
 # Optional: allow running migrations at build time by passing a build-arg
 # Usage (CI only, only if your DB is reachable during build):
@@ -58,7 +60,8 @@ RUN if [ -n "${DATABASE_URL:-}" ]; then \
 			echo "DATABASE_URL build-arg provided — running 'npx prisma migrate deploy' during build (CI only)"; \
 			if command -v npx >/dev/null 2>&1 && [ -f node_modules/.bin/prisma ]; then \
 				export DATABASE_URL="${DATABASE_URL}"; \
-				su -s /bin/sh brins -c "npx prisma migrate deploy" || echo "prisma migrate deploy failed; continuing without aborting build"; \
+				USERNAME=$(getent passwd "${APP_UID}" | cut -d: -f1 || echo brins); \
+				su -s /bin/sh "${USERNAME}" -c "npx prisma migrate deploy" || echo "prisma migrate deploy failed; continuing without aborting build"; \
 			else \
 				echo "prisma not available in image, skipping prisma migrate"; \
 			fi; \
