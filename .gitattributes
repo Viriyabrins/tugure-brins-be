@@ -1,0 +1,7 @@
+# Enforce LF for shell scripts to avoid CRLF shebang issues on Unix
+*.sh text eol=lf
+
+# Also force LF for Dockerfiles and YAML (optional)
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
