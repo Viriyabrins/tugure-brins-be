@@ -40,6 +40,12 @@ RUN if [ ! -f node_modules/.bin/prisma ]; then \
 COPY . .
 
 # Generate Prisma client during image build (if prisma is installed)
+# Ensure prisma schema folder is copied into the image (some .dockerignore setups exclude it)
+COPY prisma ./prisma
+RUN set -eux; \
+    ls -la prisma || true; \
+    chown -R ${APP_UID}:${APP_GID} prisma || true
+
 RUN if command -v npx >/dev/null 2>&1 && [ -f node_modules/.bin/prisma ]; then \
 			npx prisma generate; \
 		else \
