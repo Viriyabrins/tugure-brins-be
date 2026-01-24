@@ -61,7 +61,9 @@ USER ${APP_UID}:${APP_GID}
 # Usage (CI only, only if your DB is reachable during build):
 # podman build --build-arg DATABASE_URL='postgresql://user:pass@host:5432/db' -t adsb-backend:staging .
 ARG DATABASE_URL
-ENV DATABASE_URL=${DATABASE_URL}
+# Do not bake an empty DATABASE_URL into the image. Keep DATABASE_URL as a build-ARG
+# so the build-time migration step can use it, but pass the runtime DATABASE_URL when
+# starting the container (e.g. `podman run -e DATABASE_URL=...`).
 RUN if [ -n "${DATABASE_URL:-}" ]; then \
 			echo "DATABASE_URL build-arg provided — running 'npx prisma migrate deploy' during build (CI only)"; \
 			if command -v npx >/dev/null 2>&1 && [ -f node_modules/.bin/prisma ]; then \
