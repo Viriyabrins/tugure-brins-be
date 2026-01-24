@@ -75,6 +75,7 @@ jobs:
             SSH_USER: ${{ secrets.SSH_USER }}
             SSH_PORT: ${{ secrets.SSH_PORT }}
             SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+            STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
           run: |
             set -euo pipefail
 
@@ -92,11 +93,12 @@ jobs:
 
             SSH_CMD="sshpass -p \"${SSH_PASSWORD}\" ssh -o StrictHostKeyChecking=no -p \"${SSH_PORT}\""
 
-            eval "$SSH_CMD" "${SSH_USER}@${SSH_HOST}" 'bash -s' -- "${IMAGE}" "${GHCR_USERNAME}" "${GHCR_TOKEN}" <<'REMOTE'
+            eval "$SSH_CMD" "${SSH_USER}@${SSH_HOST}" 'bash -s' -- "${IMAGE}" "${GHCR_USERNAME}" "${GHCR_TOKEN}" "${STAGING_DATABASE_URL}" <<'REMOTE'
             set -euo pipefail
             IMAGE="$1"
             GHCR_USER="$2"
             GHCR_TOKEN="$3"
+            STAGING_DATABASE_URL="$4"
 
             echo "Logging into GHCR as ${GHCR_USER}"
             printf '%s' "${GHCR_TOKEN}" | podman login ghcr.io --username "${GHCR_USER}" --password-stdin
@@ -132,9 +134,18 @@ jobs:
             fi
 
             echo "Starting new brins-be-staging container from ${IMAGE}"
+            # Ensure latest image is available
             podman pull "${IMAGE}" || true
+
+            # Deploy relies on the container entrypoint to run migrations at startup when DATABASE_URL is provided
+            echo "Migrations will be executed by the container entrypoint if DATABASE_URL is set."
             podman rm -f brins-be-staging >/dev/null 2>&1 || true
-            podman run -d --name brins-be-staging --restart=always -p 10011:10011 "${IMAGE}"
+            # Start container with DATABASE_URL if provided so the container entrypoint can run migrations
+            if [ -n "${STAGING_DATABASE_URL:-}" ]; then
+              podman run -d --name brins-be-staging --restart=always -e DATABASE_URL="${STAGING_DATABASE_URL}" -p 10011:10011 "${IMAGE}"
+            else
+              podman run -d --name brins-be-staging --restart=always -p 10011:10011 "${IMAGE}"
+            fi
 
             # No host-mounted uploads directory required for this deployment
 
