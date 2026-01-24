@@ -43,6 +43,7 @@ RUN if command -v npx >/dev/null 2>&1 && [ -f node_modules/.bin/prisma ]; then \
 # Usage (CI only, only if your DB is reachable during build):
 # podman build --build-arg DATABASE_URL='postgresql://user:pass@host:5432/db' -t adsb-backend:staging .
 ARG DATABASE_URL
+ENV DATABASE_URL=${DATABASE_URL}
 RUN if [ -n "${DATABASE_URL:-}" ]; then \
 			echo "DATABASE_URL build-arg provided — running 'npx prisma migrate deploy' during build (CI only)"; \
 			if command -v npx >/dev/null 2>&1 && [ -f node_modules/.bin/prisma ]; then \
