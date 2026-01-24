@@ -15,12 +15,11 @@ RUN set -eux; \
 	mkdir -p /app /home/brins; \
 	chown -R "${APP_UID}:${APP_GID}" /home/brins /app
 ENV HOME=/home/brins
-USER ${APP_UID}:${APP_GID}
 
 # Install dependencies (production only) as unprivileged user
 # Copy package files first for Docker layer caching and ensure ownership
 # Use numeric ownership in COPY to ensure correctness with build args
-COPY --chown=${APP_UID}:${APP_GID} package.json package-lock.json* ./
+COPY package.json package-lock.json* ./
 # Use npm ci when lockfile exists, otherwise fall back to npm install
 RUN set -eux; \
 	if [ -f package-lock.json ]; then \
@@ -29,8 +28,16 @@ RUN set -eux; \
 		npm install --loglevel=verbose; \
 	fi
 
+# Ensure Prisma CLI is available; install globally if local binary is missing
+RUN if [ ! -f node_modules/.bin/prisma ]; then \
+    echo "prisma binary missing locally; installing prisma globally"; \
+    npm install -g prisma@5.10.0 --no-audit --no-fund; \
+  else \
+    echo "prisma binary present locally"; \
+  fi
+
 # Copy app files (set ownership to avoid a later expensive chown)
-COPY --chown=${APP_UID}:${APP_GID} . .
+COPY . .
 
 # Generate Prisma client during image build (if prisma is installed)
 RUN if command -v npx >/dev/null 2>&1 && [ -f node_modules/.bin/prisma ]; then \
@@ -38,6 +45,11 @@ RUN if command -v npx >/dev/null 2>&1 && [ -f node_modules/.bin/prisma ]; then \
 		else \
 			echo "prisma not available in image, skipping prisma generate"; \
 		fi
+
+# Ensure node files are owned by the runtime user and switch to non-root
+RUN set -eux; \
+	chown -R ${APP_UID}:${APP_GID} /app /home/brins || true
+USER ${APP_UID}:${APP_GID}
 
 # Optional: allow running migrations at build time by passing a build-arg
 # Usage (CI only, only if your DB is reachable during build):
