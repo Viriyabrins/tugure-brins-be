@@ -109,12 +109,20 @@ jobs:
             TIMESTAMP=$(date +%Y%m%d%H%M%S)
             OLD=$(podman ps -a -q -f name=^brins-be-staging$ || true)
             if [ -n "${OLD}" ]; then
-              echo "Found existing brins-be-staging container, backing up..."
+              echo "Found existing brins-be-staging container, backing up (fixed name)..."
               podman stop brins-be-staging || true
-              BACKUP_IMAGE=brins-be-staging:backup-${TIMESTAMP}
+              BACKUP_IMAGE=brins-be-staging:backup
               podman commit brins-be-staging "${BACKUP_IMAGE}" || true
               podman tag "${BACKUP_IMAGE}" brins-be-staging:previous || true
+              # Save backup tar for off-host retention (overwrite previous)
               podman save -o "${BACKUP_DIR}/brins-be-staging-backup-${TIMESTAMP}.tar" "${BACKUP_IMAGE}" || true
+              # Remove any existing fixed-name backup container then create stopped backup container for visibility
+              BACKUP_CONTAINER="brins-be-staging-backup"
+              podman rm -f "${BACKUP_CONTAINER}" >/dev/null 2>&1 || true
+              podman create --name "${BACKUP_CONTAINER}" "${BACKUP_IMAGE}" >/dev/null 2>&1 || true
+              # Show images and containers for visibility
+              podman images --filter reference=brins-be-staging* || true
+              podman ps -a --filter name=^${BACKUP_CONTAINER}$ || true
               podman rm brins-be-staging || true
             fi
 
