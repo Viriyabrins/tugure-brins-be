@@ -41,3 +41,99 @@ jobs:
         with:
           name: staging-image-digest
           path: image-digest.txt
+
+      - name: Pull pushed image (for export)
+        run: |
+          echo "Pulling image for packaging...";
+          docker pull ghcr.io/viriyabrins/brins-be:staging-latest
+      - name: Save image tarball
+        run: |
+          docker save ghcr.io/viriyabrins/brins-be:staging-latest | gzip > image-staging-latest.tar.gz
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-image
+          path: image-staging-latest.tar.gz
+  deploy-to-podman:
+      needs: build-and-publish
+      runs-on: ubuntu-latest
+      if: success()
+      steps:
+        - name: Start ssh-agent and add key
+          uses: webfactory/ssh-agent@v0.8.1
+          with:
+            ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+        - name: Deploy to remote Podman host as brins
+          env:
+            IMAGE: ghcr.io/viriyabrins/brins-be:staging-latest
+            GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+            GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+            SSH_HOST: ${{ secrets.SSH_HOST }}
+            SSH_USER: ${{ secrets.SSH_USER }}
+            SSH_PORT: ${{ secrets.SSH_PORT }}
+            SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+          run: |
+            set -euo pipefail
+
+            if [ -z "${SSH_HOST:-}" ] || [ -z "${SSH_USER:-}" ]; then
+              echo "Missing SSH_HOST or SSH_USER secrets"
+              exit 1
+            fi
+
+            SSH_PORT=${SSH_PORT:-22}
+
+            echo "Deploying ${IMAGE} to ${SSH_USER}@${SSH_HOST}:${SSH_PORT}"
+
+            # If SSH_PASSWORD is provided, install sshpass and use it; otherwise rely on ssh-agent key
+            if [ -n "${SSH_PASSWORD:-}" ]; then
+              sudo apt-get update -y
+              sudo apt-get install -y sshpass
+              SSH_CMD="sshpass -p \"${SSH_PASSWORD}\" ssh -o StrictHostKeyChecking=no -p \"${SSH_PORT}\""
+            else
+              SSH_CMD="ssh -o StrictHostKeyChecking=no -p \"${SSH_PORT}\""
+            fi
+
+            eval "$SSH_CMD" "${SSH_USER}@${SSH_HOST}" 'bash -s' -- "${IMAGE}" "${GHCR_USERNAME}" "${GHCR_TOKEN}" <<'REMOTE'
+            set -euo pipefail
+            IMAGE="$1"
+            GHCR_USER="$2"
+            GHCR_TOKEN="$3"
+
+            echo "Logging into GHCR as ${GHCR_USER}"
+            printf '%s' "${GHCR_TOKEN}" | podman login ghcr.io --username "${GHCR_USER}" --password-stdin
+
+            echo "Pulling image ${IMAGE}"
+            podman pull "${IMAGE}"
+
+            # Prepare host directories
+            STAGING_APP_DIR=/home/brins/brins-be-staging
+            BACKUP_DIR=/home/brins/backups
+            mkdir -p "${STAGING_APP_DIR}" "${BACKUP_DIR}"
+            chown -R $(id -u):$(id -g) "${STAGING_APP_DIR}" || true
+
+            # Backup existing container
+            TIMESTAMP=$(date +%Y%m%d%H%M%S)
+            OLD=$(podman ps -a -q -f name=^brins-be-staging$ || true)
+            if [ -n "${OLD}" ]; then
+              echo "Found existing brins-be-staging container, backing up..."
+              podman stop brins-be-staging || true
+              BACKUP_IMAGE=brins-be-staging:backup-${TIMESTAMP}
+              podman commit brins-be-staging "${BACKUP_IMAGE}" || true
+              podman tag "${BACKUP_IMAGE}" brins-be-staging:previous || true
+              podman save -o "${BACKUP_DIR}/brins-be-staging-backup-${TIMESTAMP}.tar" "${BACKUP_IMAGE}" || true
+              podman rm brins-be-staging || true
+            fi
+
+            echo "Starting new brins-be-staging container from ${IMAGE}"
+            podman pull "${IMAGE}" || true
+            podman rm -f brins-be-staging >/dev/null 2>&1 || true
+            podman run -d --name brins-be-staging --restart=always -p 10011:10011 "${IMAGE}"
+
+            # No host-mounted uploads directory required for this deployment
+
+            sleep 2
+            podman ps -a --filter name=^brins-be-staging$
+
+            echo "Deploy complete"
+            REMOTE
