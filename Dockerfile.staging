@@ -14,8 +14,8 @@ ARG APP_GID=1000
 RUN set -eux; \
 	mkdir -p /app /home/brins; \
 	chown -R "${APP_UID}:${APP_GID}" /home/brins /app
+# Ensure HOME is set for the non-root user
 ENV HOME=/home/brins
-USER ${APP_UID}:${APP_GID}
 
 # Install dependencies (production only) as unprivileged user
 # Copy package files first for Docker layer caching and ensure ownership
@@ -28,6 +28,10 @@ RUN set -eux; \
 	else \
 		npm install --loglevel=verbose; \
 	fi
+
+# Fix ownership of installed modules so non-root user can access them later
+RUN set -eux; \
+    chown -R ${APP_UID}:${APP_GID} /app /home/brins || true
 
 # Copy app files (set ownership to avoid a later expensive chown)
 COPY --chown=${APP_UID}:${APP_GID} . .
