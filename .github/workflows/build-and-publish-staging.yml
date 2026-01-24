@@ -59,10 +59,7 @@ jobs:
       runs-on: ubuntu-latest
       if: success()
       steps:
-        - name: Start ssh-agent and add key
-          uses: webfactory/ssh-agent@v0.5.3
-          with:
-            ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+        # Using password-based SSH only (sshpass will be installed in the runner)
 
         - name: Deploy to remote Podman host as brins
           env:
@@ -76,23 +73,19 @@ jobs:
           run: |
             set -euo pipefail
 
-            if [ -z "${SSH_HOST:-}" ] || [ -z "${SSH_USER:-}" ]; then
-              echo "Missing SSH_HOST or SSH_USER secrets"
+            if [ -z "${SSH_HOST:-}" ] || [ -z "${SSH_USER:-}" ] || [ -z "${SSH_PASSWORD:-}" ]; then
+              echo "Missing SSH_HOST, SSH_USER or SSH_PASSWORD secrets"
               exit 1
             fi
 
             SSH_PORT=${SSH_PORT:-22}
 
-            echo "Deploying ${IMAGE} to ${SSH_USER}@${SSH_HOST}:${SSH_PORT}"
+            echo "Deploying ${IMAGE} to ${SSH_USER}@${SSH_HOST}:${SSH_PORT} using password auth"
 
-            # If SSH_PASSWORD is provided, install sshpass and use it; otherwise rely on ssh-agent key
-            if [ -n "${SSH_PASSWORD:-}" ]; then
-              sudo apt-get update -y
-              sudo apt-get install -y sshpass
-              SSH_CMD="sshpass -p \"${SSH_PASSWORD}\" ssh -o StrictHostKeyChecking=no -p \"${SSH_PORT}\""
-            else
-              SSH_CMD="ssh -o StrictHostKeyChecking=no -p \"${SSH_PORT}\""
-            fi
+            sudo apt-get update -y
+            sudo apt-get install -y sshpass
+
+            SSH_CMD="sshpass -p \"${SSH_PASSWORD}\" ssh -o StrictHostKeyChecking=no -p \"${SSH_PORT}\""
 
             eval "$SSH_CMD" "${SSH_USER}@${SSH_HOST}" 'bash -s' -- "${IMAGE}" "${GHCR_USERNAME}" "${GHCR_TOKEN}" <<'REMOTE'
             set -euo pipefail
