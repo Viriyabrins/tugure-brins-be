@@ -106,11 +106,9 @@ jobs:
             echo "Pulling image ${IMAGE}"
             podman pull "${IMAGE}"
 
-            # Prepare host directories
-            STAGING_APP_DIR=/home/brins/brins-be-staging
+            # Prepare host directories (no host app dir needed; containers manage app files)
             BACKUP_DIR=/home/brins/backups
-            mkdir -p "${STAGING_APP_DIR}" "${BACKUP_DIR}"
-            chown -R $(id -u):$(id -g) "${STAGING_APP_DIR}" || true
+            mkdir -p "${BACKUP_DIR}"
 
             # Backup existing container
             TIMESTAMP=$(date +%Y%m%d%H%M%S)
