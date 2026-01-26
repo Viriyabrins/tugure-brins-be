@@ -25,6 +25,19 @@ export default async function (fastify) {
     controller.create.bind(controller)
   );
 
+  fastify.post(
+    '/apps/:appId/analytics/track/batch',
+    { preHandler: fastify.authenticate },
+    async (request, reply) => {
+      console.log('Analytics data received:', request.body);
+
+      return reply.send({
+        success: true,
+        message: 'Analytics tracked'
+      });
+    }
+  );
+
   fastify.put(
     '/apps/:appId/entities/:entityName/:id',
     { preHandler: fastify.authenticate },
