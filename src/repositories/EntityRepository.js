@@ -19,7 +19,8 @@ const ALLOWED_ENTITIES = [
   'MasterContract',
   'Contract',
   'Invoice',
-  'DebitCreditNote'
+  'DebitCreditNote',
+  'AuditLog',
 ];
 
 const ensureEntity = (entity) => {
@@ -43,9 +44,9 @@ export class EntityRepository {
     }
 
     if (prisma.batch && entity === 'Batch') {
-      const rows = await prisma.batch.findMany({ 
-        take: limit, 
-        orderBy: { batch_id: direction } 
+      const rows = await prisma.batch.findMany({
+        take: limit,
+        orderBy: { batch_id: direction }
       });
       return rows.map((r) => ({ id: r.batch_id, ...r }));
     }
@@ -69,6 +70,37 @@ export class EntityRepository {
       const rows = await prisma.masterContract.findMany({ take: limit, orderBy: { contract_id: direction } });
       return rows.map((r) => ({ id: r.contract_id, ...r }));
     }
+
+    if (prisma.paymentIntent && entity === 'PaymentIntent') {
+      const rows = await prisma.paymentIntent.findMany({
+        take: limit,
+        orderBy: { intent_id: direction }
+      });
+      return rows.map((r) => ({ id: r.intent_id, ...r }));
+    }
+
+    if (prisma.notification && entity === 'Notification') {
+      const rows = await prisma.notification.findMany({
+        take: limit,
+        orderBy: { id: direction }
+      });
+      return rows.map((r) => ({ id: r.id, ...r }));
+    }
+
+    if (prisma.auditLog && entity === 'AuditLog') {
+      const rows = await prisma.auditLog.findMany({
+        take: limit,
+        orderBy: { id: direction }
+      });
+      return rows.map((r) => ({ id: r.id, ...r }));
+    }
+
+    if (prisma.nota && entity === 'Nota') {
+      const rows = await prisma.nota.findMany({ take: limit, orderBy: { nota_number: direction } });
+      return rows.map((r) => ({ id: r.nota_number, ...r }));
+    }
+
+    
 
     if (prisma.entityRecord && prisma.entityRecord.findMany) {
       const records = await prisma.entityRecord.findMany({
@@ -104,6 +136,26 @@ export class EntityRepository {
     if (prisma.masterContract && entity === 'MasterContract') {
       const r = await prisma.masterContract.findUnique({ where: { contract_id: id } });
       return r ? { id: r.contract_id, ...r } : null;
+    }
+
+    if (prisma.nota && entity === 'Nota') {
+      const r = await prisma.nota.findUnique({ where: { nota_number: id } });
+      return r ? { id: r.nota_number, ...r } : null;
+    }
+
+    if (prisma.paymentIntent && entity === 'PaymentIntent') {
+      const r = await prisma.paymentIntent.findUnique({ where: { intent_id: id } });
+      return r ? { id: r.intent_id, ...r } : null;
+    }
+
+    if (prisma.notification && entity === 'Notification') {
+      const r = await prisma.notification.findUnique({ where: { id } });
+      return r ? { id: r.id, ...r } : null;
+    }
+
+    if (prisma.auditLog && entity === 'AuditLog') {
+      const r = await prisma.auditLog.findUnique({ where: { id } });
+      return r ? { id: r.id, ...r } : null;
     }
 
     if (!prisma.entityRecord || !prisma.entityRecord.findUnique) return null;
@@ -151,6 +203,70 @@ export class EntityRepository {
       return { id: r.contract_id, ...r };
     }
 
+    // Dedicated model creation (PaymentIntent)
+    if (entity === 'PaymentIntent' && prisma.paymentIntent && prisma.paymentIntent.create) {
+      try {
+        const r = await prisma.paymentIntent.create({ data: payload });
+        return { id: r.intent_id, ...r };
+      } catch (error) {
+        console.error('PaymentIntent creation error:', error);
+        throw error;
+      }
+    }
+
+    // Dedicated model creation (Payment)
+    if (entity === 'Payment' && prisma.payment && prisma.payment.create) {
+      try {
+        const r = await prisma.payment.create({ data: payload });
+        return { id: r.payment_ref, ...r };
+      } catch (error) {
+        console.error('Payment creation error:', error);
+        throw error;
+      }
+    }
+
+    // Dedicated model creation (Claim)
+    if (entity === 'Claim' && prisma.claim && prisma.claim.create) {
+      try {
+        const r = await prisma.claim.create({ data: payload });
+        return { id: r.claim_no, ...r };
+      } catch (error) {
+        console.error('Claim creation error:', error);
+        throw error;
+      }
+    }
+
+    // Dedicated model creation (Nota)
+    if (entity === 'Nota' && prisma.nota && prisma.nota.create) {
+      try {
+        const r = await prisma.nota.create({ data: payload });
+        return { id: r.nota_number, ...r };
+      } catch (error) {
+        console.error('Nota creation error:', error);
+        throw error;
+      }
+    }
+
+    if (entity === 'Notification' && prisma.notification && prisma.notification.create) {
+      try {
+        const r = await prisma.notification.create({ data: payload });
+        return { id: r.id, ...r };
+      } catch (error) {
+        console.error('Notification creation error:', error);
+        throw error;
+      }
+    }
+
+    if (entity === 'AuditLog' && prisma.auditLog && prisma.auditLog.create) {
+      try {
+        const r = await prisma.auditLog.create({ data: payload });
+        return { id: r.id, ...r };
+      } catch (error) {
+        console.error('AuditLog creation error:', error);
+        throw error;
+      }
+    }
+
     throw Object.assign(new Error('Create not supported for this entity in current schema'), { statusCode: 500 });
   }
 
@@ -190,6 +306,63 @@ export class EntityRepository {
       return { id: r.contract_id, ...r };
     }
 
+    // Dedicated model updates (Nota)
+    if (entity === 'Nota' && prisma.nota && prisma.nota.update) {
+      const existing = await prisma.nota.findUnique({ where: { nota_number: id } });
+      if (!existing) {
+        const error = new Error(`Nota ${id} not found`);
+        error.statusCode = 404;
+        throw error;
+      }
+      const r = await prisma.nota.update({
+        where: { nota_number: id },
+        data: payload
+      });
+      return { id: r.nota_number, ...r };
+    }
+
+    if (entity === 'PaymentIntent' && prisma.paymentIntent && prisma.paymentIntent.update) {
+      const existing = await prisma.paymentIntent.findUnique({ where: { intent_id: id } });
+      if (!existing) {
+        const error = new Error(`PaymentIntent ${id} not found`);
+        error.statusCode = 404;
+        throw error;
+      }
+      const r = await prisma.paymentIntent.update({
+        where: { intent_id: id },
+        data: payload
+      });
+      return { id: r.intent_id, ...r };
+    }
+
+    if (entity === 'Notification' && prisma.notification && prisma.notification.update) {
+      const existing = await prisma.notification.findUnique({ where: { id } });
+      if (!existing) {
+        const error = new Error(`Notification ${id} not found`);
+        error.statusCode = 404;
+        throw error;
+      }
+      const r = await prisma.notification.update({
+        where: { id },
+        data: payload
+      });
+      return { id: r.id, ...r };
+    }
+
+    if (entity === 'AuditLog' && prisma.auditLog && prisma.auditLog.update) {
+      const existing = await prisma.auditLog.findUnique({ where: { id } });
+      if (!existing) {
+        const error = new Error(`AuditLog ${id} not found`);
+        error.statusCode = 404;
+        throw error;
+      }
+      const r = await prisma.auditLog.update({
+        where: { id },
+        data: payload
+      });
+      return { id: r.id, ...r };
+    }
+
     return null;
   }
 
@@ -206,6 +379,20 @@ export class EntityRepository {
       const existing = await prisma.debtor.findUnique({ where: { id } });
       if (!existing) return null;
       await prisma.debtor.delete({ where: { id } });
+      return { id };
+    }
+
+    if (entity === 'Notification' && prisma.notification && prisma.notification.delete) {
+      const existing = await prisma.notification.findUnique({ where: { id } });
+      if (!existing) return null;
+      await prisma.notification.delete({ where: { id } });
+      return { id };
+    }
+
+    if (entity === 'AuditLog' && prisma.auditLog && prisma.auditLog.delete) {
+      const existing = await prisma.auditLog.findUnique({ where: { id } });
+      if (!existing) return null;
+      await prisma.auditLog.delete({ where: { id } });
       return { id };
     }
 
