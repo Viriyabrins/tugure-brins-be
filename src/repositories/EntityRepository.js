@@ -363,6 +363,13 @@ export class EntityRepository {
       return { id: r.id, ...r };
     }
 
+    if (entity === 'Claim' && prisma.claim && prisma.claim.update) {
+      const existing = await prisma.claim.findUnique({ where: { claim_no: id } });
+      if (!existing) return null;
+      const r = await prisma.claim.update({ where: { claim_no: id }, data: payload });
+      return { id: r.claim_no, ...r };
+    }
+
     return null;
   }
 
