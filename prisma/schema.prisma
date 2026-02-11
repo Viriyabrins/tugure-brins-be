@@ -437,3 +437,30 @@ model SystemConfig {
   status       String  @default("APPROVED")
   @@map("systemconfig")
 }
+
+enum RoleName {
+  admin
+  brins
+  tugure
+  user
+}
+
+model Role {
+  id           String   @id @default(cuid())
+  name         RoleName
+  description  String?
+  created_date DateTime @default(now())
+  updated_date DateTime @updatedAt
+  @@map("role")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  full_name     String
+  email         String   @unique
+  password_hash String
+  is_active     Boolean  @default(true)
+  created_date  DateTime @default(now())
+  updated_date  DateTime @updatedAt
+  @@map("user")
+}
