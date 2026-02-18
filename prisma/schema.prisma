@@ -56,7 +56,7 @@ model Batch {
   paid_date               DateTime?
   closed_by               String?
   closed_date             DateTime?
-  rejection_reason        String?
+  revision_reason        String?
   @@map("batch")
 }
 
@@ -107,7 +107,7 @@ model Claim {
   invoiced_date           DateTime?
   paid_by                 String?
   paid_date               DateTime?
-  rejection_reason        String?
+  revision_reason        String?
   reviewed_by             String?
   review_date             DateTime?
   @@map("claim")
@@ -146,7 +146,7 @@ model DebitCreditNote {
   approved_date     DateTime?
   acknowledged_by   String?
   acknowledged_date DateTime?
-  rejection_reason  String?
+  revision_reason  String?
   currency          String   @default("IDR")
   @@map("debitcreditnote")
 }
@@ -189,7 +189,7 @@ model Debtor {
   version_no              Int      @default(1)
   status                  String   @default("DRAFT")
   is_locked               Boolean  @default(false)
-  rejection_reason        String?
+  revision_reason        String?
   validation_remarks      String?
   @@map("debtor")
 }
@@ -266,7 +266,7 @@ model MasterContract {
   first_approved_date    DateTime?
   second_approved_by     String?
   second_approved_date   DateTime?
-  rejection_reason       String?
+  revision_reason       String?
   @@map("mastercontract")
 }
 
@@ -385,8 +385,26 @@ model Record {
   accepted_date   DateTime?
   rejected_by     String?
   rejected_date   DateTime?
-  rejection_reason String?
   @@map("record")
+}
+
+model ReviseLog {
+  id                       String   @id @default(cuid())
+  debtor_id                String?
+  batch_id                 String
+  nomor_peserta            String
+  nama_peserta             String
+  alamat_usaha             String?
+  nomor_perjanjian_kredit  String?
+  plafon                   Decimal? @db.Decimal(25, 2)
+  nominal_premi            Decimal? @db.Decimal(25, 2)
+  contract_id              String?
+  status                   String
+  revision_reason          String?
+  created_by               String?
+  created_at               DateTime @default(now())
+
+  @@map("reviselog")
 }
 
 model SlaRule {

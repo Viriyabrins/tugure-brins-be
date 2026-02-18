@@ -21,6 +21,7 @@ const ALLOWED_ENTITIES = [
   'Invoice',
   'DebitCreditNote',
   'AuditLog',
+  'ReviseLog',
 ];
 
 const ensureEntity = (entity) => {
@@ -100,7 +101,13 @@ export class EntityRepository {
       return rows.map((r) => ({ id: r.nota_number, ...r }));
     }
 
-    
+    if (prisma.reviseLog && entity === 'ReviseLog') {
+      const rows = await prisma.reviseLog.findMany({
+        take: limit,
+        orderBy: { created_at: direction }
+      });
+      return rows.map((r) => ({ id: r.id, ...r }));
+    }
 
     if (prisma.entityRecord && prisma.entityRecord.findMany) {
       const records = await prisma.entityRecord.findMany({
@@ -263,6 +270,16 @@ export class EntityRepository {
         return { id: r.id, ...r };
       } catch (error) {
         console.error('AuditLog creation error:', error);
+        throw error;
+      }
+    }
+
+    if (entity === 'ReviseLog' && prisma.reviseLog && prisma.reviseLog.create) {
+      try {
+        const r = await prisma.reviseLog.create({ data: payload });
+        return { id: r.id, ...r };
+      } catch (error) {
+        console.error('ReviseLog creation error:', error);
         throw error;
       }
     }

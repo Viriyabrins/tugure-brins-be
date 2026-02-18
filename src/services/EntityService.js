@@ -14,12 +14,19 @@ export default class EntityService {
       error.statusCode = 404;
       throw error;
     }
-    return { id: record.id, ...record.payload };
+    // Support repository returning either { id, payload } or a flattened object with fields
+    if (record.payload && typeof record.payload === 'object') {
+      return { id: record.id, ...record.payload };
+    }
+    return record;
   }
 
   async create(entity, payload) {
     const record = await this.entityRepository.create(entity, payload);
-    return { id: record.id, ...record.payload };
+    if (record && record.payload && typeof record.payload === 'object') {
+      return { id: record.id, ...record.payload };
+    }
+    return record;
   }
 
   async update(entity, id, payload) {
@@ -29,7 +36,10 @@ export default class EntityService {
       error.statusCode = 404;
       throw error;
     }
-    return { id: record.id, ...record.payload };
+    if (record.payload && typeof record.payload === 'object') {
+      return { id: record.id, ...record.payload };
+    }
+    return record;
   }
 
   async delete(entity, id) {
