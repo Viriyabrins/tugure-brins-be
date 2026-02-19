@@ -19,6 +19,7 @@ model AuditLog {
   user_role   String?
   ip_address  String?
   reason      String?
+  created_at DateTime @default(now())
   @@map("auditlog")
 }
 
@@ -305,6 +306,7 @@ model Notification {
   target_user   String?
   is_read       Boolean @default(false)
   action_url    String?
+  created_at    DateTime @default(now())
   @@map("notification")
 }
 
