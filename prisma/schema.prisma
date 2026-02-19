@@ -74,6 +74,7 @@ model Bordero {
   reviewed_date DateTime?
   finalized_by String?
   finalized_date DateTime?
+  debtors      Debtor[]
   @@map("bordero")
 }
 
@@ -156,6 +157,8 @@ model Debtor {
   cover_id                Int?
   program_id              String?
   batch_id                String
+  bordero_id              String?
+  bordero                 Bordero?  @relation(fields: [bordero_id], references: [bordero_id])
   nomor_rekening_pinjaman String?
   nomor_peserta           String
   loan_type               String?
