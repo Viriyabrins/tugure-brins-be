@@ -155,46 +155,62 @@ model DebitCreditNote {
 
 model Debtor {
   id                      String   @id @default(cuid())
-  cover_id                Int?
-  program_id              String?
+  cover_id                String?  // Excel: COVER_ID (e.g. "992536")
+  program_id              String?  // Excel: PROGRAM_ID
   batch_id                String
   bordero_id              String?
   bordero                 Bordero?  @relation(fields: [bordero_id], references: [bordero_id])
-  nomor_rekening_pinjaman String?
-  nomor_peserta           String
-  loan_type               String?
-  loan_type_desc          String?
-  cif_rekening_pinjaman   String?
-  jenis_pengajuan_desc    String?
-  jenis_covering_desc     String?
-  tanggal_mulai_covering  DateTime?
-  tanggal_akhir_covering  DateTime?
-  plafon                  Decimal? @db.Decimal(25, 2)
-  nominal_premi           Decimal? @db.Decimal(25, 2)
-  premi_percentage        Decimal? @db.Decimal(5, 2)
-  ric_percentage          Decimal? @db.Decimal(5, 2)
-  bf_percentage           Decimal? @db.Decimal(5, 2)
-  net_premi               Decimal? @db.Decimal(25, 2)
-  unit_code               String?
-  unit_desc               String?
-  branch_desc             String?
-  region_desc             String?
-  nama_peserta            String
-  alamat_usaha            String?
-  nomor_perjanjian_kredit String?
-  tanggal_terima          DateTime?
-  tanggal_validasi        DateTime?
-  teller_premium_date     DateTime?
-  status_aktif           Int?
-  remark_premi           String?
-  flag_restruktur        Int?
-  kolektabilitas          Int?
+  nomor_rekening_pinjaman String?  // Excel: NOMOR_REKENING_PINJAMAN
+  nomor_peserta           String   // Excel: NOMOR_PESERTA
+  loan_type               String?  // Excel: LOAN_TYPE (e.g. "DL")
+  loan_type_desc          String?  // Excel: LOAN_TYPE_DESC (e.g. "KMK RC RITEL RF")
+  cif_rekening_pinjaman   String?  // Excel: CIF_REKENING_PINJAMAN
+  jenis_pengajuan_desc    String?  // Excel: JENIS_PENGAJUAN_DESC (e.g. "New")
+  jenis_covering_desc     String?  // Excel: JENIS_COVERING_DESC (e.g. "Conditional Automatic Cover")
+  tanggal_mulai_covering  DateTime? // Excel: TANGGAL_MULAI_COVERING
+  tanggal_akhir_covering  DateTime? // Excel: TANGGAL_AKHIR_COVERING
+  plafon                  Decimal? @db.Decimal(25, 2)  // Excel: PLAFON
+  nominal_premi           Decimal? @db.Decimal(25, 2)  // Excel: NOMINAL_PREMI
+
+  // === Breakdown Premi (percentage + amount) ===
+  premi_percentage        Decimal? @db.Decimal(5, 2)   // e.g. 42.5%
+  premium_amount          Decimal? @db.Decimal(25, 2)  // Excel: PREMIUM (42.5%) - calculated amount
+  ric_percentage          Decimal? @db.Decimal(5, 2)   // e.g. 32.5%
+  ric_amount              Decimal? @db.Decimal(25, 2)  // Excel: RIC (32.5%) - calculated amount
+  bf_percentage           Decimal? @db.Decimal(5, 2)   // e.g. 2.5%
+  bf_amount               Decimal? @db.Decimal(25, 2)  // Excel: BF (2.5%) - calculated amount
+  net_premi               Decimal? @db.Decimal(25, 2)  // Excel: NET_PREMI
+
+  // === Lokasi ===
+  unit_code               String?  // Excel: UNIT_CODE (e.g. "0039")
+  unit_desc               String?  // Excel: UNIT_DESC (e.g. "KC Kupang")
+  branch_desc             String?  // Excel: BRANCH_DESC
+  region_desc             String?  // Excel: REGION_DESC (e.g. "Denpasar")
+
+  // === Identitas Peserta ===
+  nama_peserta            String   // Excel: NAMA_PESERTA
+  alamat_usaha            String?  // Excel: ALAMAT_USAHA
+  nomor_perjanjian_kredit String?  // Excel: NOMOR_PERJANJIAN_KREDIT
+
+  // === Timestamp ===
+  tanggal_terima          DateTime? // Excel: TANGGAL_TERIMA
+  tanggal_validasi        DateTime? // Excel: TANGGAL_VALIDASI
+  teller_premium_date     DateTime? // Excel: TELLER_PREMIUM_DATE
+
+  // === Status ===
+  status_aktif            Int?     // Excel: STATUS_AKTIF (1 = aktif)
+  remark_premi            String?  // Excel: REMARK_PREMI
+  flag_restruk            Int?     // Excel: FLAG_RESTRUK (0/1)
+  kolektabilitas          Int?     // Excel: KOLEKTABILITAS
+
+  // === Internal System ===
   contract_id             String?
   version_no              Int      @default(1)
   status                  String   @default("DRAFT")
   is_locked               Boolean  @default(false)
-  revision_reason        String?
+  revision_reason         String?
   validation_remarks      String?
+
   @@map("debtor")
 }
 
@@ -243,34 +259,115 @@ model Invoice {
 }
 
 model MasterContract {
-  contract_id            String   @id
-  policy_no              String
-  program_id             String?
-  product_type           String
-  credit_type            String
-  loan_type              String?
-  loan_type_desc         String?
-  coverage_start_date    DateTime
-  coverage_end_date      DateTime
-  max_tenor_month        Int?
-  max_plafond            Decimal?  @db.Decimal(25, 2)
-  share_tugure_percentage Decimal? @db.Decimal(5, 2)
-  premium_rate           Decimal? @db.Decimal(5, 2)
-  ric_rate               Decimal? @db.Decimal(5, 2)
-  bf_rate                Decimal? @db.Decimal(5, 2)
-  allowed_kolektabilitas String?
-  allowed_region         String?
-  currency               String   @default("IDR")
-  remark                 String?
-  effective_status       String   @default("Draft")
-  version                Int      @default(1)
-  parent_contract_id     String?
-  effective_date         DateTime?
-  first_approved_by      String?
-  first_approved_date    DateTime?
-  second_approved_by     String?
-  second_approved_date   DateTime?
-  revision_reason       String?
+  contract_id                String   @id
+
+  // === Identitas & Input ===
+  underwriter_name           String?
+  input_date                 DateTime?
+  input_status               String?    // Baru, Active, dll
+  contract_status            String     @default("Draft") // Active, Draft, Expired, dll
+
+  // === Pihak Terkait ===
+  source_type                String?    // Ceding, Broker, dll
+  source_name                String?    // PT. BRI ASURANSI INDONESIA
+  ceding_name                String?    // PT. BRI ASURANSI INDONESIA
+  ceding_same_as_source      Boolean    @default(false)
+  bank_obligee               String?    // BANK RAKYAT INDONESIA
+
+  // === Endorsement ===
+  endorsement_type           String?    // New, Endorse
+  endorsement_reason         String?    // Perubahan Lainnya, dll
+  endorsement_reason_detail  String?
+
+  // === Detail Kontrak ===
+  kind_of_business           String?    // Direct Bisnis
+  offer_date                 DateTime?
+  contract_no                String?    // B.002/BRINS/REAS/11/2025 - RENEWAL 2025 I - END. 3
+  binder_no_tugure           String?    // FAC202503180001C7
+  contract_no_from           String?    // nomor kontrak asal (parent)
+  binder_no_from             String?    // binder asal
+  type_of_contract           String?    // Facultative obligatory
+  policy_no                  String?
+  program_id                 String?
+
+  // === Produk & Kredit ===
+  product_type               String?    // Kredit Umum/Kredit Komersil/Kredit Ritel
+  product_name               String?    // Modal Kerja
+  credit_type                String?    // Produktif
+  debtor_principal           String?    // Modal Kerja
+  loan_type                  String?
+  loan_type_desc             String?
+
+  // === Periode Coverage ===
+  contract_start_date        DateTime?
+  contract_end_date          DateTime?
+  effective_date             DateTime?
+  stnc_date                  DateTime?
+
+  // === Retrocession & Cession ===
+  outward_retrocession       String?    @default("Tidak") // Ya, Tidak
+  automatic_cession          String?    @default("Tidak") // Ya, Tidak
+  retro_program              String?    // QS
+
+  // === Rate & Komisi ===
+  share_tugure_percentage    Decimal?   @db.Decimal(5, 2)
+  premium_rate               Decimal?   @db.Decimal(5, 2)
+  reinsurance_commission_pct Decimal?   @db.Decimal(5, 2) // RIC rate
+  profit_commission_pct      Decimal?   @db.Decimal(5, 2)
+  brokerage_fee_pct          Decimal?   @db.Decimal(5, 2) // BF rate
+
+  // === Reporting & Payment ===
+  reporting_participant_days Int?       // 30
+  reporting_claim_days       Int?       // 30
+  claim_reporting_type       String?    // Reporting
+  payment_scenario           String?    // Sekaligus / tunggal
+  installment_frequency      String?    // Mingguan, Bulanan, dll
+
+  // === Stop Loss ===
+  stop_loss_value            Decimal?   @db.Decimal(25, 2)
+  stop_loss_basis            String?    // On Gross
+
+  // === Cut Loss ===
+  cut_loss_value             Decimal?   @db.Decimal(25, 2)
+  cut_loss_basis             String?    // On Gross
+
+  // === Cut Off ===
+  cut_off_value              Decimal?   @db.Decimal(25, 2)
+  cut_off_basis              String?    // On Gross
+
+  // === Loss Ratio ===
+  loss_ratio_value           Decimal?   @db.Decimal(5, 2)
+  loss_ratio_basis           String?    // On Gross
+
+  // === Evaluation Period ===
+  evaluation_period_value    Int?       // 60
+  evaluation_period_unit     String?    // Hari
+
+  // === Tenor & Plafond ===
+  max_tenor_value            Int?       // 36
+  max_tenor_unit             String?    // Bulan
+  max_sum_insured            Decimal?   @db.Decimal(25, 2) // max plafond / sum insured
+
+  // === Coverage Limit ===
+  perils_covers              String?    // deskripsi peril
+  limit_coverage_type        String?    // Single Limit
+  kolektibilitas_max         String?    // "5", "3"
+  kolektibilitas_limit_amount Decimal?  @db.Decimal(25, 2)
+
+  // === Metadata ===
+  allowed_region             String?
+  currency                   String     @default("IDR")
+  remark                     String?
+  version                    Int        @default(1)
+  parent_contract_id         String?
+
+  // === Approval ===
+  first_approved_by          String?
+  first_approved_date        DateTime?
+  second_approved_by         String?
+  second_approved_date       DateTime?
+  revision_reason            String?
+
   @@map("mastercontract")
 }
 
