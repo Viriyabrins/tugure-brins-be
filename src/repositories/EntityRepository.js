@@ -197,6 +197,12 @@ export class EntityRepository {
     // For dedicated models, insert minimally if possible
     if (entity === 'Debtor' && prisma.debtor && prisma.debtor.create) {
       try {
+        // Business rule: a SUBMITTED debtor must be linked to exactly one Bordero
+        if (payload?.status === 'SUBMITTED' && !payload?.bordero_id) {
+          const error = new Error('Debtor SUBMITTED must include bordero_id');
+          error.statusCode = 400;
+          throw error;
+        }
         const r = await prisma.debtor.create({ data: payload });
         return { id: r.id, ...r };
       } catch (error) {
@@ -324,6 +330,14 @@ export class EntityRepository {
       if (!existing) return null;
       const r = await prisma.debtor.update({ where: { id }, data: payload });
       return { id: r.id, ...r };
+    }
+
+    // Dedicated model updates (Bordero)
+    if (entity === 'Bordero' && prisma.bordero && prisma.bordero.update) {
+      const existing = await prisma.bordero.findUnique({ where: { bordero_id: id } });
+      if (!existing) return null;
+      const r = await prisma.bordero.update({ where: { bordero_id: id }, data: payload });
+      return { id: r.bordero_id, ...r };
     }
 
     // Dedicated model updates (MasterContract)
