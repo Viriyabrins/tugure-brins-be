@@ -284,6 +284,17 @@ export class EntityRepository {
       }
     }
 
+    // Dedicated model creation (Bordero)
+    if (entity === 'Bordero' && prisma.bordero && prisma.bordero.create) {
+      try {
+        const r = await prisma.bordero.create({ data: payload });
+        return { id: r.bordero_id, ...r };
+      } catch (error) {
+        console.error('Bordero creation error:', error);
+        throw error;
+      }
+    }
+
     throw Object.assign(new Error('Create not supported for this entity in current schema'), { statusCode: 500 });
   }
 
