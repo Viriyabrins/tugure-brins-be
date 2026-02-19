@@ -34,88 +34,105 @@ const ensureEntity = (entity) => {
 };
 
 export class EntityRepository {
-  async list(entity, { limit = 100, sort = 'desc' } = {}) {
+  async list(entity, { limit = 100, sort = 'desc', offset = 0, page = 1, filters = {} } = {}) {
     ensureEntity(entity);
     const direction = sort === 'asc' ? 'asc' : 'desc';
+    // When limit > 0, apply skip/take for pagination. When limit === 0, return all records.
+    const paginationOpts = limit > 0 ? { skip: offset, take: limit } : {};
+
     // Prefer dedicated tables when available (Debtor, Claim, Bordero), otherwise fall back
     // to the generic `entityRecord` table if present.
     if (prisma.debtor && entity === 'Debtor') {
-      const rows = await prisma.debtor.findMany({ take: limit, orderBy: { id: direction } });
-      return rows.map((r) => ({ id: r.id, ...r }));
+      const where = {};
+      if (filters) {
+        if (filters.contract && filters.contract !== 'all') where.contract_id = filters.contract;
+        if (filters.batch) where.batch_id = { contains: filters.batch };
+        // Debtor model uses `status` for underwriting status
+        if (filters.submitStatus && filters.submitStatus !== 'all') where.status = filters.submitStatus;
+        // Batch status lives on `Batch` table. If provided, find matching batch_ids first.
+        if (filters.status && filters.status !== 'all') {
+          const matching = await prisma.batch.findMany({ where: { status: filters.status }, select: { batch_id: true } });
+          const ids = matching.map((b) => b.batch_id);
+          // if no matching batches, ensure no debtors returned
+          where.batch_id = ids.length > 0 ? { in: ids } : { in: [] };
+        }
+        // Use `tanggal_terima` as debtor received/created date
+        if (filters.startDate || filters.endDate) {
+          where.tanggal_terima = {};
+          if (filters.startDate) where.tanggal_terima.gte = new Date(filters.startDate);
+          if (filters.endDate) where.tanggal_terima.lte = new Date(filters.endDate);
+        }
+      }
+      const total = await prisma.debtor.count({ where });
+      const rows = await prisma.debtor.findMany({ where, ...paginationOpts, orderBy: { id: direction } });
+      return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 
     if (prisma.batch && entity === 'Batch') {
-      const rows = await prisma.batch.findMany({
-        take: limit,
-        orderBy: { batch_id: direction }
-      });
-      return rows.map((r) => ({ id: r.batch_id, ...r }));
+      const total = await prisma.batch.count();
+      const rows = await prisma.batch.findMany({ ...paginationOpts, orderBy: { batch_id: direction } });
+      return { data: rows.map((r) => ({ id: r.batch_id, ...r })), total };
     }
 
     if (prisma.claim && entity === 'Claim') {
-      const rows = await prisma.claim.findMany({ take: limit, orderBy: { claim_no: direction } });
-      return rows.map((r) => ({ id: r.claim_no, ...r }));
+      const total = await prisma.claim.count();
+      const rows = await prisma.claim.findMany({ ...paginationOpts, orderBy: { claim_no: direction } });
+      return { data: rows.map((r) => ({ id: r.claim_no, ...r })), total };
     }
 
     if (prisma.bordero && entity === 'Bordero') {
-      const rows = await prisma.bordero.findMany({ take: limit, orderBy: { bordero_id: direction } });
-      return rows.map((r) => ({ id: r.bordero_id, ...r }));
+      const total = await prisma.bordero.count();
+      const rows = await prisma.bordero.findMany({ ...paginationOpts, orderBy: { bordero_id: direction } });
+      return { data: rows.map((r) => ({ id: r.bordero_id, ...r })), total };
     }
 
     if (prisma.subrogation && entity === 'Subrogation') {
-      const rows = await prisma.subrogation.findMany({ take: limit, orderBy: { subrogation_id: direction } });
-      return rows.map((r) => ({ id: r.subrogation_id, ...r }));
+      const total = await prisma.subrogation.count();
+      const rows = await prisma.subrogation.findMany({ ...paginationOpts, orderBy: { subrogation_id: direction } });
+      return { data: rows.map((r) => ({ id: r.subrogation_id, ...r })), total };
     }
 
     if (prisma.masterContract && entity === 'MasterContract') {
-      const rows = await prisma.masterContract.findMany({ take: limit, orderBy: { contract_id: direction } });
-      return rows.map((r) => ({ id: r.contract_id, ...r }));
+      const total = await prisma.masterContract.count();
+      const rows = await prisma.masterContract.findMany({ ...paginationOpts, orderBy: { contract_id: direction } });
+      return { data: rows.map((r) => ({ id: r.contract_id, ...r })), total };
     }
 
     if (prisma.paymentIntent && entity === 'PaymentIntent') {
-      const rows = await prisma.paymentIntent.findMany({
-        take: limit,
-        orderBy: { intent_id: direction }
-      });
-      return rows.map((r) => ({ id: r.intent_id, ...r }));
+      const total = await prisma.paymentIntent.count();
+      const rows = await prisma.paymentIntent.findMany({ ...paginationOpts, orderBy: { intent_id: direction } });
+      return { data: rows.map((r) => ({ id: r.intent_id, ...r })), total };
     }
 
     if (prisma.notification && entity === 'Notification') {
-      const rows = await prisma.notification.findMany({
-        take: limit,
-        orderBy: { id: direction }
-      });
-      return rows.map((r) => ({ id: r.id, ...r }));
+      const total = await prisma.notification.count();
+      const rows = await prisma.notification.findMany({ ...paginationOpts, orderBy: { id: direction } });
+      return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 
     if (prisma.auditLog && entity === 'AuditLog') {
-      const rows = await prisma.auditLog.findMany({
-        take: limit,
-        orderBy: { id: direction }
-      });
-      return rows.map((r) => ({ id: r.id, ...r }));
+      const total = await prisma.auditLog.count();
+      const rows = await prisma.auditLog.findMany({ ...paginationOpts, orderBy: { id: direction } });
+      return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 
     if (prisma.nota && entity === 'Nota') {
-      const rows = await prisma.nota.findMany({ take: limit, orderBy: { nota_number: direction } });
-      return rows.map((r) => ({ id: r.nota_number, ...r }));
+      const total = await prisma.nota.count();
+      const rows = await prisma.nota.findMany({ ...paginationOpts, orderBy: { nota_number: direction } });
+      return { data: rows.map((r) => ({ id: r.nota_number, ...r })), total };
     }
 
     if (prisma.reviseLog && entity === 'ReviseLog') {
-      const rows = await prisma.reviseLog.findMany({
-        take: limit,
-        orderBy: { created_at: direction }
-      });
-      return rows.map((r) => ({ id: r.id, ...r }));
+      const total = await prisma.reviseLog.count();
+      const rows = await prisma.reviseLog.findMany({ ...paginationOpts, orderBy: { created_at: direction } });
+      return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 
     if (prisma.entityRecord && prisma.entityRecord.findMany) {
-      const records = await prisma.entityRecord.findMany({
-        where: { entityName: entity },
-        take: limit,
-        orderBy: { createdAt: direction }
-      });
-      return records.map((row) => ({ id: row.id, ...row.payload }));
+      const where = { entityName: entity };
+      const total = await prisma.entityRecord.count({ where });
+      const records = await prisma.entityRecord.findMany({ where, ...paginationOpts, orderBy: { createdAt: direction } });
+      return { data: records.map((row) => ({ id: row.id, ...row.payload })), total };
     }
 
     // If no backing model exists, return empty list instead of throwing a runtime error.
@@ -286,6 +303,17 @@ export class EntityRepository {
         return { id: r.id, ...r };
       } catch (error) {
         console.error('ReviseLog creation error:', error);
+        throw error;
+      }
+    }
+
+    // Dedicated model creation (Record)
+    if (entity === 'Record' && prisma.record && prisma.record.create) {
+      try {
+        const r = await prisma.record.create({ data: payload });
+        return { id: r.id, ...r };
+      } catch (error) {
+        console.error('Record creation error:', error);
         throw error;
       }
     }

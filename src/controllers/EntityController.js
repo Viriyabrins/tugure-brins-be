@@ -1,4 +1,5 @@
 import { sendSuccess, sendCreated, sendError } from '../utils/response.js';
+import { paginate, paginationResponse } from '../utils/pagination.js';
 
 export default class EntityController {
   constructor({ entityService }) {
@@ -7,11 +8,27 @@ export default class EntityController {
 
   async list(request, reply) {
     try {
-      const params = {
-        sort: request.query.sort,
-        limit: Number(request.query.limit) || 50
-      };
+      const { page, limit, offset } = paginate(request.query);
+      // support optional JSON filter in `q` query param (frontend may send q=JSON.stringify(filters))
+      let parsedFilters = undefined;
+      if (request.query && request.query.q) {
+        try {
+          parsedFilters = JSON.parse(request.query.q);
+        } catch (e) {
+          // ignore parse errors and treat as no filters
+          parsedFilters = undefined;
+        }
+      }
+
+      const params = { sort: request.query.sort, limit, offset, page, filters: parsedFilters };
       const items = await this.entityService.list(request.params.entityName, params);
+
+      // If repository returned pagination metadata, wrap with paginationResponse
+      if (items && Object.prototype.hasOwnProperty.call(items, 'data') && typeof items.total === 'number') {
+        const resp = paginationResponse({ data: items.data, total: items.total, page, limit, offset });
+        return sendSuccess(reply, resp, 'Entities loaded');
+      }
+
       return sendSuccess(reply, items, 'Entities loaded');
     } catch (error) {
       return sendError(reply, error, error.statusCode || 500);
