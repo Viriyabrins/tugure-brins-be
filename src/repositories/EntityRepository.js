@@ -49,6 +49,17 @@ export class EntityRepository {
         if (filters.batch) where.batch_id = { contains: filters.batch };
         // Debtor model uses `status` for underwriting status
         if (filters.submitStatus && filters.submitStatus !== 'all') where.status = filters.submitStatus;
+        if (filters.status && filters.status !== 'all' && !filters.submitStatus) where.status = filters.status;
+        if (filters.name) {
+          const keyword = String(filters.name).trim();
+          if (keyword) {
+            where.OR = [
+              { nama_peserta: { contains: keyword, mode: 'insensitive' } },
+              { nomor_peserta: { contains: keyword, mode: 'insensitive' } },
+              { batch_id: { contains: keyword, mode: 'insensitive' } },
+            ];
+          }
+        }
         // Batch status lives on `Batch` table. If provided, find matching batch_ids first.
         if (filters.status && filters.status !== 'all') {
           const matching = await prisma.batch.findMany({ where: { status: filters.status }, select: { batch_id: true } });
@@ -123,8 +134,37 @@ export class EntityRepository {
     }
 
     if (prisma.reviseLog && entity === 'ReviseLog') {
-      const total = await prisma.reviseLog.count();
-      const rows = await prisma.reviseLog.findMany({ ...paginationOpts, orderBy: { created_at: direction } });
+      const where = {};
+      if (filters) {
+        if (filters.contract && filters.contract !== 'all') where.contract_id = filters.contract;
+        if (filters.batch) where.batch_id = { contains: filters.batch, mode: 'insensitive' };
+        if (filters.name) {
+          const keyword = String(filters.name).trim();
+          if (keyword) {
+            where.OR = [
+              { nama_peserta: { contains: keyword, mode: 'insensitive' } },
+              { nomor_peserta: { contains: keyword, mode: 'insensitive' } },
+              { batch_id: { contains: keyword, mode: 'insensitive' } },
+            ];
+          }
+        }
+        if (filters.submitStatus && filters.submitStatus !== 'all') {
+          where.status = filters.submitStatus;
+        } else if (
+          filters.status &&
+          ['SUBMITTED', 'APPROVED', 'REVISION', 'CONDITIONAL'].includes(filters.status)
+        ) {
+          where.status = filters.status;
+        }
+        if (filters.startDate || filters.endDate) {
+          where.created_at = {};
+          if (filters.startDate) where.created_at.gte = new Date(filters.startDate);
+          if (filters.endDate) where.created_at.lte = new Date(filters.endDate);
+        }
+      }
+
+      const total = await prisma.reviseLog.count({ where });
+      const rows = await prisma.reviseLog.findMany({ where, ...paginationOpts, orderBy: { created_at: direction } });
       return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 

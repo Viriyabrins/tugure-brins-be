@@ -84,6 +84,7 @@ model Claim {
   policy_no               String?
   nomor_sertifikat        String?
   nama_tertanggung        String
+  nomor_peserta           String?
   no_ktp_npwp             String?
   no_fasilitas_kredit     String?
   bdo_premi               String?
@@ -205,6 +206,7 @@ model Debtor {
 
   // === Internal System ===
   contract_id             String?
+  policy_no               String?
   version_no              Int      @default(1)
   status                  String   @default("DRAFT")
   is_locked               Boolean  @default(false)
