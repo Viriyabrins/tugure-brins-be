@@ -3,12 +3,12 @@ import prisma from '../prisma/client.js';
 export class NotificationRepository {
   async list({ target_role, unreadOnly, limit = 100 } = {}) {
     const where = {};
-    if (target_role) where.targetRole = target_role;
-    if (unreadOnly) where.isRead = true;
+    if (target_role) where.target_role = target_role;
+    if (unreadOnly) where.is_read = false;
 
     return prisma.notification.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { created_at: 'desc' },
       take: limit
     });
   }
@@ -29,15 +29,15 @@ export class NotificationRepository {
         message,
         type,
         module,
-        referenceId: reference_id,
-        targetRole: target_role
+        reference_id,
+        target_role
       }
     });
   }
 
   async update(id, updates) {
     const data = {};
-    if (typeof updates.is_read === 'boolean') data.isRead = updates.is_read;
+    if (typeof updates.is_read === 'boolean') data.is_read = updates.is_read;
     if (updates.message) data.message = updates.message;
     if (updates.title) data.title = updates.title;
 
