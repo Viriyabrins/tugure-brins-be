@@ -1,16 +1,23 @@
 import prisma from '../prisma/client.js';
 
 export class NotificationRepository {
-  async list({ target_role, unreadOnly, limit = 100 } = {}) {
+  async list({ target_role, unreadOnly, limit = 100, page = 1 } = {}) {
     const where = {};
     if (target_role) where.target_role = target_role;
     if (unreadOnly) where.is_read = false;
 
-    return prisma.notification.findMany({
-      where,
-      orderBy: { created_at: 'desc' },
-      take: limit
-    });
+    const skip = (page - 1) * limit;
+    const [data, total] = await Promise.all([
+      prisma.notification.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        take: limit,
+        skip
+      }),
+      prisma.notification.count({ where })
+    ]);
+
+    return { data, pagination: { total, page, limit } };
   }
 
   async create(payload) {

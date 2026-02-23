@@ -11,10 +11,11 @@ export default class NotificationController {
       const filters = {
         target_role: request.query.target_role,
         unreadOnly: request.query.unread === 'true',
-        limit: Number(request.query.limit) || 100
+        limit: Number(request.query.limit) || 100,
+        page: Number(request.query.page) || 1
       };
-      const notifications = await this.notificationService.list(filters);
-      return sendSuccess(reply, notifications, 'Notifications fetched');
+      const result = await this.notificationService.list(filters);
+      return sendSuccess(reply, result, 'Notifications fetched');
     } catch (error) {
       return sendError(reply, error, error.statusCode || 500);
     }
