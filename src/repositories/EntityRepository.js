@@ -34,6 +34,168 @@ const ensureEntity = (entity) => {
 };
 
 export class EntityRepository {
+  async reconcileBatchAfterDebtorUpdate(batchId, { approvedBy } = {}) {
+    if (!batchId || !prisma.batch || !prisma.debtor) return null;
+
+    const existingBatch = await prisma.batch.findUnique({ where: { batch_id: batchId } });
+    if (!existingBatch) return null;
+
+    const debtors = await prisma.debtor.findMany({
+      where: { batch_id: batchId },
+      select: {
+        status: true,
+        plafon: true,
+        net_premi: true,
+      },
+    });
+
+    const normalizeStatus = (status) => (status || '').toString().toUpperCase();
+    const toNumber = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const totalDebtors = debtors.length;
+    const approvedDebtors = debtors.filter((d) => normalizeStatus(d.status) === 'APPROVED');
+    const revisionDebtors = debtors.filter((d) => normalizeStatus(d.status) === 'REVISION');
+    const approvedCount = approvedDebtors.length;
+    const hasRevisions = revisionDebtors.length > 0;
+    const allApproved = totalDebtors > 0 && approvedCount === totalDebtors;
+    const allReviewed = totalDebtors > 0 && debtors.every((d) => {
+      const status = normalizeStatus(d.status);
+      return status === 'APPROVED' || status === 'REVISION' || status === 'CONDITIONAL';
+    });
+
+    const finalExposureAmount = approvedDebtors.reduce((sum, debtor) => sum + toNumber(debtor.plafon), 0);
+    const finalPremiumAmount = approvedDebtors.reduce((sum, debtor) => sum + toNumber(debtor.net_premi), 0);
+
+    const updatePayload = {
+      final_exposure_amount: finalExposureAmount,
+      final_premium_amount: finalPremiumAmount,
+      debtor_review_completed: allApproved,
+      batch_ready_for_nota: allApproved,
+    };
+
+    if (allApproved) {
+      updatePayload.status = 'Approved';
+      updatePayload.approved_date = new Date();
+      if (approvedBy) updatePayload.approved_by = approvedBy;
+      updatePayload.revision_reason = null;
+    } else if (approvedCount === 0 && hasRevisions) {
+      updatePayload.status = 'Revision';
+      updatePayload.revision_reason = 'All debtors marked for revision in review';
+    } else if (hasRevisions && allReviewed) {
+      updatePayload.status = 'Partial Revision';
+      updatePayload.revision_reason = `${revisionDebtors.length} debtor(s) marked for revision`;
+    }
+
+    const updated = await prisma.batch.update({
+      where: { batch_id: batchId },
+      data: updatePayload,
+    });
+
+    const previousStatus = (existingBatch.status || '').toString();
+    const currentStatus = (updated.status || '').toString();
+    const completionChanged = Boolean(existingBatch.debtor_review_completed) !== Boolean(updated.debtor_review_completed);
+    const statusChanged = previousStatus !== currentStatus;
+    const actorEmail = approvedBy || existingBatch.approved_by || 'system@backend.local';
+
+    if (statusChanged || completionChanged) {
+      const notifications = [];
+
+      if (Boolean(updated.debtor_review_completed)) {
+        notifications.push(
+          {
+            title: '✅ Debtor Review COMPLETED - Ready for Nota',
+            message: `Batch ${batchId}: ALL ${totalDebtors} debtors reviewed. ${approvedCount} approved. Final premium: Rp ${finalPremiumAmount.toLocaleString('id-ID')}.`,
+            type: 'ACTION_REQUIRED',
+            module: 'DEBTOR',
+            reference_id: updated.batch_id,
+            target_role: 'TUGURE',
+          },
+          {
+            title: '✅ Debtor Review COMPLETED - Ready for Nota',
+            message: `Batch ${batchId} selesai direview dan siap lanjut ke proses nota.`,
+            type: 'INFO',
+            module: 'DEBTOR',
+            reference_id: updated.batch_id,
+            target_role: 'BRINS',
+          },
+        );
+      } else if (currentStatus === 'Revision') {
+        notifications.push({
+          title: 'Batch Requires Revision - All Debtors Marked',
+          message: `Batch ${batchId}: semua debtor berstatus revision dan perlu diperbaiki oleh BRINS.`,
+          type: 'WARNING',
+          module: 'DEBTOR',
+          reference_id: updated.batch_id,
+          target_role: 'BRINS',
+        });
+      } else if (currentStatus === 'Partial Revision') {
+        notifications.push({
+          title: 'Batch Partial Revision',
+          message: `Batch ${batchId}: ${approvedCount} approved, ${revisionDebtors.length} debtor perlu revision.`,
+          type: 'WARNING',
+          module: 'DEBTOR',
+          reference_id: updated.batch_id,
+          target_role: 'BRINS',
+        });
+      }
+
+      for (const notification of notifications) {
+        try {
+          await prisma.notification.create({ data: notification });
+        } catch (error) {
+          console.warn('Failed to create batch reconciliation notification:', error);
+        }
+      }
+
+      try {
+        await prisma.auditLog.create({
+          data: {
+            action: Boolean(updated.debtor_review_completed)
+              ? 'DEBTOR_REVIEW_COMPLETED'
+              : statusChanged
+                ? `BATCH_STATUS_${currentStatus.toString().toUpperCase().replace(/\s+/g, '_')}`
+                : 'BATCH_RECONCILED',
+            module: 'DEBTOR',
+            entity_type: 'Batch',
+            entity_id: updated.batch_id,
+            old_value: JSON.stringify({
+              status: existingBatch.status,
+              debtor_review_completed: existingBatch.debtor_review_completed,
+              batch_ready_for_nota: existingBatch.batch_ready_for_nota,
+              final_exposure_amount: existingBatch.final_exposure_amount,
+              final_premium_amount: existingBatch.final_premium_amount,
+            }),
+            new_value: JSON.stringify({
+              status: updated.status,
+              debtor_review_completed: updated.debtor_review_completed,
+              batch_ready_for_nota: updated.batch_ready_for_nota,
+              final_exposure_amount: updated.final_exposure_amount,
+              final_premium_amount: updated.final_premium_amount,
+            }),
+            user_email: actorEmail,
+            user_role: approvedBy ? 'TUGURE' : 'SYSTEM',
+            reason: `Reconciled batch ${batchId}: ${approvedCount}/${totalDebtors} approved`,
+          },
+        });
+      } catch (error) {
+        console.warn('Failed to create batch reconciliation audit log:', error);
+      }
+    }
+
+    return {
+      id: updated.batch_id,
+      ...updated,
+      stats: {
+        totalDebtors,
+        approvedCount,
+        revisionCount: revisionDebtors.length,
+      },
+    };
+  }
+
   async list(entity, { limit = 100, sort = 'desc', offset = 0, page = 1, filters = {} } = {}) {
     ensureEntity(entity);
     const direction = sort === 'asc' ? 'asc' : 'desc';
@@ -496,6 +658,20 @@ export class EntityRepository {
       const existing = await prisma.debtor.findUnique({ where: { id } });
       if (!existing) return null;
       await prisma.debtor.delete({ where: { id } });
+      return { id };
+    }
+
+    if (entity === 'Batch' && prisma.batch && prisma.batch.delete) {
+      const existing = await prisma.batch.findUnique({ where: { batch_id: id } });
+      if (!existing) return null;
+      await prisma.batch.delete({ where: { batch_id: id } });
+      return { id };
+    }
+
+    if (entity === 'Bordero' && prisma.bordero && prisma.bordero.delete) {
+      const existing = await prisma.bordero.findUnique({ where: { bordero_id: id } });
+      if (!existing) return null;
+      await prisma.bordero.delete({ where: { bordero_id: id } });
       return { id };
     }
 
