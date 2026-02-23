@@ -283,6 +283,24 @@ export class EntityRepository {
       return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 
+    if (prisma.emailTemplate && entity === 'EmailTemplate') {
+      const total = await prisma.emailTemplate.count();
+      const rows = await prisma.emailTemplate.findMany({ ...paginationOpts, orderBy: { id: direction } });
+      return { data: rows.map((r) => ({ id: r.id, ...r })), total };
+    }
+
+    if (prisma.SystemConfig && entity === 'SystemConfig') {
+      const total = await prisma.SystemConfig.count();
+      const rows = await prisma.SystemConfig.findMany({ ...paginationOpts, orderBy: { id: direction } });
+      return { data: rows.map((r) => ({ id: r.id, ...r })), total };
+    }
+
+    if (prisma.SlaRule && entity === 'SlaRule') {
+      const total = await prisma.SlaRule.count();
+      const rows = await prisma.SlaRule.findMany({ ...paginationOpts, orderBy: { id: direction } });
+      return { data: rows.map((r) => ({ id: r.id, ...r })), total };
+    }
+
     if (prisma.auditLog && entity === 'AuditLog') {
       const total = await prisma.auditLog.count();
       const rows = await prisma.auditLog.findMany({ ...paginationOpts, orderBy: { id: direction } });
@@ -372,6 +390,16 @@ export class EntityRepository {
     if (prisma.paymentIntent && entity === 'PaymentIntent') {
       const r = await prisma.paymentIntent.findUnique({ where: { intent_id: id } });
       return r ? { id: r.intent_id, ...r } : null;
+    }
+
+    if (prisma.SystemConfig && entity === 'SystemConfig') {
+      const r = await prisma.SystemConfig.findUnique({ where: { id } });
+      return r ? { id: r.id, ...r } : null;
+    }
+
+    if (prisma.SlaRule && entity === 'SlaRule') {
+      const r = await prisma.SlaRule.findUnique({ where: { id } });
+      return r ? { id: r.id, ...r } : null;
     }
 
     if (prisma.notification && entity === 'Notification') {
@@ -531,6 +559,36 @@ export class EntityRepository {
       }
     }
 
+    if (entity === 'EmailTemplate' && prisma.emailTemplate?.create) {
+      try {
+        const r = await prisma.emailTemplate.create({ data: payload });
+        return { id: r.id, ...r };
+      } catch (error) {
+        console.error('Email Template creation error:', error);
+        throw error;
+      }
+    }
+
+    if (entity === 'SystemConfig' && prisma.SystemConfig?.create) {
+      try {
+        const r = await prisma.SystemConfig.create({ data: payload });
+        return { id: r.id, ...r };
+      } catch (error) {
+        console.error('System config creation error:', error);
+        throw error;
+      }
+    }
+
+    if (entity === 'SlaRule' && prisma.SlaRule?.create) {
+      try {
+        const r = await prisma.SlaRule.create({ data: payload });
+        return { id: r.id, ...r };
+      } catch (error) {
+        console.error('Notification by rule creation error:', error);
+        throw error;
+      }
+    }
+
     throw Object.assign(new Error('Create not supported for this entity in current schema'), { statusCode: 500 });
   }
 
@@ -539,12 +597,13 @@ export class EntityRepository {
 
     if (prisma.entityRecord && prisma.entityRecord.findUnique) {
       const existing = await prisma.entityRecord.findUnique({ where: { id } });
-      if (!existing || existing.entityName !== entity) return null;
-      const record = await prisma.entityRecord.update({
-        where: { id },
-        data: { payload }
-      });
-      return { id: record.id, ...record.payload };
+      if (existing && existing.entityName === entity) {
+        const record = await prisma.entityRecord.update({
+          where: { id },
+          data: { payload }
+        });
+        return { id: record.id, ...record.payload };
+      }
     }
 
     if (entity === 'Batch' && prisma.batch && prisma.batch.update) {
@@ -642,6 +701,36 @@ export class EntityRepository {
       return { id: r.claim_no, ...r };
     }
 
+    if (entity === 'EmailTemplate' && prisma.emailTemplate?.update) {
+      const existing = await prisma.emailTemplate.findUnique({ where: { id } });
+      if (!existing) {
+        const error = new Error(`EmailTemplate ${id} not found`);
+        error.statusCode = 404;
+        throw error;
+      }
+      const { id: _id, ...data } = payload;
+      const r = await prisma.emailTemplate.update({
+        where: { id },
+        data
+      });
+      return { id: r.id, ...r };
+    }
+
+    if (entity === 'SlaRule' && prisma.SlaRule?.update) {
+      const existing = await prisma.SlaRule.findUnique({ where: { id } });
+      if (!existing) {
+        const error = new Error(`SlaRule ${id} not found`);
+        error.statusCode = 404;
+        throw error;
+      }
+      const { id: _id, ...data } = payload;
+      const r = await prisma.SlaRule.update({
+        where: { id },
+        data
+      });
+      return { id: r.id, ...r };
+    }
+
     return null;
   }
 
@@ -689,6 +778,27 @@ export class EntityRepository {
       return { id };
     }
 
+    if (entity === 'EmailTemplate' && prisma.emailTemplate && prisma.emailTemplate.delete) {
+      const existing = await prisma.emailTemplate.findUnique({ where: { id } });
+      if (!existing) return null;
+      await prisma.emailTemplate.delete({ where: { id } });
+      return { id };
+    }
+    
+    if (entity === 'NotificationSetting' && prisma.emailTemplate && prisma.emailTemplate.delete) {
+      const existing = await prisma.emailTemplate.findUnique({ where: { id } });
+      if (!existing) return null;
+      await prisma.emailTemplate.delete({ where: { id } });
+      return { id };
+    }
+
+    if (entity === 'SlaRule' && prisma.SlaRule && prisma.SlaRule.delete) {
+      const existing = await prisma.SlaRule.findUnique({ where: { id } });
+      if (!existing) return null;
+      await prisma.SlaRule.delete({ where: { id } });
+      return { id };
+    }
+    
     return null;
   }
 }
