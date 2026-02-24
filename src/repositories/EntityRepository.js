@@ -284,8 +284,14 @@ export class EntityRepository {
     }
 
     if (prisma.emailTemplate && entity === 'EmailTemplate') {
-      const total = await prisma.emailTemplate.count();
-      const rows = await prisma.emailTemplate.findMany({ ...paginationOpts, orderBy: { id: direction } });
+      const where = {};
+      if (filters) {
+        if (filters.object_type && filters.object_type !== 'all') {
+          where.object_type = filters.object_type;
+        }
+      }
+      const total = await prisma.emailTemplate.count({ where });
+      const rows = await prisma.emailTemplate.findMany({ where, ...paginationOpts, orderBy: { id: direction } });
       return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 
@@ -296,8 +302,28 @@ export class EntityRepository {
     }
 
     if (prisma.SlaRule && entity === 'SlaRule') {
-      const total = await prisma.SlaRule.count();
-      const rows = await prisma.SlaRule.findMany({ ...paginationOpts, orderBy: { id: direction } });
+      const where = {};
+      if (filters) {
+        if (filters.ruleName) {
+          const keyword = String(filters.ruleName).trim();
+          if (keyword) {
+            where.OR = [
+              { rule_name: { contains: keyword, mode: 'insensitive' } },
+              { entity_type: { contains: keyword, mode: 'insensitive' } },
+            ];
+          }
+        }
+        if (filters.triggerCondition && filters.triggerCondition !== 'all') {
+          where.trigger_condition = filters.triggerCondition;
+        }
+        if (filters.status === 'active') {
+          where.is_active = true;
+        } else if (filters.status === 'inactive') {
+          where.is_active = false;
+        }
+      }
+      const total = await prisma.SlaRule.count({ where });
+      const rows = await prisma.SlaRule.findMany({ where, ...paginationOpts, orderBy: { id: direction } });
       return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 
