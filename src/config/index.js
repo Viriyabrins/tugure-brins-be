@@ -43,7 +43,12 @@ const config = {
   demoUsers: parseDemoTokens(process.env.DEMO_TOKENS),
   appId: process.env.APP_ID,
   publicSettings: parseJson(process.env.APP_PUBLIC_SETTINGS),
-  logLevel: process.env.LOG_LEVEL || 'info'
+  logLevel: process.env.LOG_LEVEL || 'info',
+  keycloakUrl: process.env.KEYCLOAK_URL || process.env.VITE_KEYCLOAK_URL,
+  keycloakRealm: process.env.KEYCLOAK_REALM || process.env.VITE_KEYCLOAK_REALM,
+  keycloakClientId: process.env.KEYCLOAK_CLIENT_ID || process.env.VITE_KEYCLOAK_CLIENT_ID,
+  keycloakClientSecret: process.env.KEYCLOAK_CLIENT_SECRET || process.env.VITE_KEYCLOAK_CLIENT_SECRET,
+  frontendUrl: process.env.FRONTEND_URL || process.env.VITE_KEYCLOAK_REDIRECT_URI || 'http://localhost:5173/Dashboard'
 };
 
 export default config;

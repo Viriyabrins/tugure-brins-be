@@ -46,7 +46,15 @@ export default class EntityController {
 
   async create(request, reply) {
     try {
-      const entity = await this.entityService.create(request.params.entityName, request.body);
+      const entity = await this.entityService.create(
+        request.params.entityName,
+        request.body,
+        {
+          user: request.user,
+          ipAddress: request.ip,
+          headers: request.headers,
+        }
+      );
       return sendCreated(reply, entity, 'Entity created');
     } catch (error) {
       return sendError(reply, error, error.statusCode || 500);
