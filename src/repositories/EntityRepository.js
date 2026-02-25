@@ -212,6 +212,21 @@ export class EntityRepository {
         // Debtor model uses `status` for underwriting status
         if (filters.submitStatus && filters.submitStatus !== 'all') where.status = filters.submitStatus;
         if (filters.status && filters.status !== 'all' && !filters.submitStatus) where.status = filters.status;
+        // Exclude specific statuses (comma-separated), used by DebtorReview to hide pre-approval statuses
+        if (filters.excludeStatuses) {
+          const excludeList = String(filters.excludeStatuses).split(',').map(s => s.trim()).filter(Boolean);
+          if (excludeList.length > 0) {
+            // Merge with existing status filter if present
+            if (where.status && typeof where.status === 'string') {
+              // Already filtering to a specific status — only keep it if it's not excluded
+              if (excludeList.includes(where.status)) {
+                where.status = { in: [] }; // no results
+              }
+            } else if (!where.status) {
+              where.status = { notIn: excludeList };
+            }
+          }
+        }
         if (filters.name) {
           const keyword = String(filters.name).trim();
           if (keyword) {
