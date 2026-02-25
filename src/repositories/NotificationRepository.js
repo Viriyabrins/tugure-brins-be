@@ -3,7 +3,13 @@ import prisma from '../prisma/client.js';
 export class NotificationRepository {
   async list({ target_role, unreadOnly, limit = 100, page = 1 } = {}) {
     const where = {};
-    if (target_role) where.target_role = target_role;
+    if (target_role) {
+      if (typeof target_role === 'string' && target_role.includes(',')) {
+        where.target_role = { in: target_role.split(',').map(r => r.trim()) };
+      } else {
+        where.target_role = target_role;
+      }
+    }
     if (unreadOnly) where.is_read = false;
 
     const skip = (page - 1) * limit;

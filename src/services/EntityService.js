@@ -62,6 +62,7 @@ export default class EntityService {
       'checker-brins-role',
       'approver-tugure-role',
       'checker-tugure-role',
+      'approver-brins-role'
     ];
 
     const prioritizedRole =
