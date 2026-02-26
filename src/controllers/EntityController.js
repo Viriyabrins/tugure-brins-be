@@ -82,4 +82,37 @@ export default class EntityController {
       return sendError(reply, error, error.statusCode || 404);
     }
   }
+
+  async uploadMasterContracts(request, reply) {
+    try {
+      const result = await this.entityService.uploadMasterContractsAtomic(
+        request.body,
+        {
+          user: request.user,
+          ipAddress: request.ip,
+          headers: request.headers,
+        }
+      );
+      return sendCreated(reply, result, 'Master contracts uploaded successfully');
+    } catch (error) {
+      return sendError(reply, error, error.statusCode || 500);
+    }
+  }
+
+  async processMasterContractApproval(request, reply) {
+    try {
+      const result = await this.entityService.processMasterContractApprovalAtomic(
+        request.params.contractId,
+        request.body,
+        {
+          user: request.user,
+          ipAddress: request.ip,
+          headers: request.headers,
+        }
+      );
+      return sendSuccess(reply, result, 'Master contract approval processed successfully');
+    } catch (error) {
+      return sendError(reply, error, error.statusCode || 500);
+    }
+  }
 }

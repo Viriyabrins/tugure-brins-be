@@ -26,6 +26,18 @@ export default async function (fastify) {
   );
 
   fastify.post(
+    '/apps/:appId/master-contracts/upload',
+    { preHandler: fastify.authenticate },
+    controller.uploadMasterContracts.bind(controller)
+  );
+
+  fastify.post(
+    '/apps/:appId/master-contracts/:contractId/approval',
+    { preHandler: fastify.authenticate },
+    controller.processMasterContractApproval.bind(controller)
+  );
+
+  fastify.post(
     '/apps/:appId/analytics/track/batch',
     { preHandler: fastify.authenticate },
     async (request, reply) => {
