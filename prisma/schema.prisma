@@ -410,24 +410,25 @@ model Notification {
 }
 
 model NotificationSetting {
-  id                      String  @id @default(cuid())
-  full_name               String
-  user_email              String
-  user_role               String
-  notification_email      String?
-  whatsapp_number         String?
-  email_enabled           Boolean @default(true)
-  whatsapp_enabled        Boolean @default(false)
-  notify_batch_status     Boolean @default(true)
-  notify_record_status    Boolean @default(true)
-  notify_nota_status      Boolean @default(true)
-  notify_claim_status     Boolean @default(true)
-  notify_subrogation_status Boolean @default(true)
-  notify_bordero_status   Boolean @default(true)
-  notify_invoice_status   Boolean @default(true)
+  id                           String  @id @default(cuid())
+  keycloak_user_id             String  @unique
+  full_name                    String
+  user_email                   String
+  user_role                    String
+  notification_email           String?
+  whatsapp_number              String?
+  email_enabled                Boolean @default(true)
+  whatsapp_enabled             Boolean @default(false)
+  notify_batch_status          Boolean @default(true)
+  notify_record_status         Boolean @default(true)
+  notify_nota_status           Boolean @default(true)
+  notify_claim_status          Boolean @default(true)
+  notify_subrogation_status    Boolean @default(true)
+  notify_bordero_status        Boolean @default(true)
+  notify_invoice_status        Boolean @default(true)
   notify_reconciliation_status Boolean @default(true)
-  notify_payment_received Boolean @default(true)
-  notify_approval_required Boolean @default(true)
+  notify_payment_received      Boolean @default(true)
+  notify_approval_required     Boolean @default(true)
   notify_document_verification Boolean @default(true)
   @@map("notificationsetting")
 }
