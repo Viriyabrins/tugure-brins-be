@@ -47,6 +47,8 @@ const config = {
   keycloakUrl: process.env.KEYCLOAK_URL || process.env.VITE_KEYCLOAK_URL,
   keycloakRealm: process.env.KEYCLOAK_REALM || process.env.VITE_KEYCLOAK_REALM,
   keycloakClientId: process.env.KEYCLOAK_CLIENT_ID || process.env.VITE_KEYCLOAK_CLIENT_ID,
+  keycloakUsername: process.env.KEYCLOAK_USERNAME || process.env.VITE_KEYCLOAK_USERNAME,
+  keycloakPassword: process.env.KEYCLOAK_PASSWORD || process.env.VITE_KEYCLOAK_PASSWORD,
   keycloakClientSecret: process.env.KEYCLOAK_CLIENT_SECRET || process.env.VITE_KEYCLOAK_CLIENT_SECRET,
   frontendUrl: process.env.FRONTEND_URL || process.env.VITE_KEYCLOAK_REDIRECT_URI || 'http://localhost:5173/Dashboard',
   smtp: {

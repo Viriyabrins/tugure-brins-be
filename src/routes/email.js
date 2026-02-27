@@ -9,7 +9,9 @@ async function getKeycloakAdminToken() {
   const tokenUrl = `${config.keycloakUrl.replace(/\/$/, '')}/realms/${encodeURIComponent(config.keycloakRealm)}/protocol/openid-connect/token`;
 
   const body = new URLSearchParams({
-    grant_type: 'client_credentials',
+    grant_type: 'password',
+    username: config.keycloakUsername,
+    password: config.keycloakPassword,
     client_id: config.keycloakClientId,
     client_secret: config.keycloakClientSecret,
   });
@@ -26,95 +28,93 @@ async function getKeycloakAdminToken() {
   }
 
   const data = await res.json();
+  console.log('[Email] Keycloak admin access_token:', data.access_token);
   return data.access_token;
 }
 
 /**
- * Fetch all users who have a specific client role in Keycloak.
+ * Fetch all users in a Keycloak group by group name.
+ * 1. GET /admin/realms/{realm}/groups → find group by name → get its id
+ * 2. GET /admin/realms/{realm}/groups/{groupId}/members → get users
  */
-async function getUsersByRole(roleName) {
+async function getUsersByGroup(groupName) {
   const adminToken = await getKeycloakAdminToken();
   const baseUrl = config.keycloakUrl.replace(/\/$/, '');
   const realm = encodeURIComponent(config.keycloakRealm);
-  const clientId = config.keycloakClientId;
 
-  // First, find the internal client UUID for our client_id
-  const clientsUrl = `${baseUrl}/admin/realms/${realm}/clients?clientId=${encodeURIComponent(clientId)}`;
-  const clientsRes = await fetch(clientsUrl, {
-    headers: { Authorization: `Bearer ${adminToken}` },
+  // Step 1: Find the group by name
+  const groupsUrl = `${baseUrl}/admin/realms/${realm}/groups?search=${encodeURIComponent(groupName)}`;
+  console.log(`[Email] Fetching groups from: ${groupsUrl}`);
+
+  const groupsRes = await fetch(groupsUrl, {
+    headers: { Authorization: `bearer ${adminToken}` },
   });
 
-  if (!clientsRes.ok) {
-    // Fallback: try realm-level roles
-    return getUsersByRealmRole(adminToken, baseUrl, realm, roleName);
-  }
-
-  const clients = await clientsRes.json();
-  if (!Array.isArray(clients) || clients.length === 0) {
-    // Fallback: try realm-level roles
-    return getUsersByRealmRole(adminToken, baseUrl, realm, roleName);
-  }
-
-  const clientUuid = clients[0].id;
-
-  // Get users with this client role
-  const roleUsersUrl = `${baseUrl}/admin/realms/${realm}/clients/${clientUuid}/roles/${encodeURIComponent(roleName)}/users?max=100`;
-  const roleUsersRes = await fetch(roleUsersUrl, {
-    headers: { Authorization: `Bearer ${adminToken}` },
-  });
-
-  if (!roleUsersRes.ok) {
-    // If client role not found, try realm-level role
-    return getUsersByRealmRole(adminToken, baseUrl, realm, roleName);
-  }
-
-  const users = await roleUsersRes.json();
-  return (users || [])
-    .filter(u => u.email)
-    .map(u => ({ email: u.email, name: u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : u.username }));
-}
-
-/**
- * Fallback: fetch users by realm-level role.
- */
-async function getUsersByRealmRole(adminToken, baseUrl, realm, roleName) {
-  const url = `${baseUrl}/admin/realms/${realm}/roles/${encodeURIComponent(roleName)}/users?max=100`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${adminToken}` },
-  });
-
-  if (!res.ok) {
-    console.warn(`[email] Failed to get users for realm role "${roleName}": ${res.status}`);
+  if (!groupsRes.ok) {
+    const text = await groupsRes.text();
+    console.error(`[Email] Failed to fetch groups (${groupsRes.status}):`, text);
     return [];
   }
 
-  const users = await res.json();
-  return (users || [])
+  const groups = await groupsRes.json();
+  console.log(`[Email] Groups found:`, groups.map(g => ({ id: g.id, name: g.name })));
+
+  // Find exact match (search is partial, so we need to filter)
+  const group = groups.find(g => g.name === groupName);
+  if (!group) {
+    console.warn(`[Email] No group found with name "${groupName}"`);
+    return [];
+  }
+
+  console.log(`[Email] Found group "${groupName}" with id: ${group.id}`);
+
+  // Step 2: Get members of the group
+  const membersUrl = `${baseUrl}/admin/realms/${realm}/groups/${group.id}/members?max=200`;
+  console.log(`[Email] Fetching group members from: ${membersUrl}`);
+
+  const membersRes = await fetch(membersUrl, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+
+  if (!membersRes.ok) {
+    const text = await membersRes.text();
+    console.error(`[Email] Failed to fetch group members (${membersRes.status}):`, text);
+    return [];
+  }
+
+  const members = await membersRes.json();
+  const users = (members || [])
     .filter(u => u.email)
-    .map(u => ({ email: u.email, name: u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : u.username }));
+    .map(u => ({
+      email: u.email,
+      name: u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : u.username,
+    }));
+
+  console.log(`[Email] Group "${groupName}" has ${users.length} member(s) with emails:`, users.map(u => u.email));
+  return users;
 }
 
 export default async function (fastify) {
   /**
-   * GET /api/users-by-role/:roleName
-   * Returns all users who have the given role, with their emails.
+   * GET /api/users-by-group/:groupName
+   * Returns all users in the given Keycloak group, with their emails.
    */
   fastify.get(
-    '/users-by-role/:roleName',
+    '/users-by-group/:groupName',
     { preHandler: fastify.authenticate },
     async (request, reply) => {
-      const { roleName } = request.params;
+      const { groupName } = request.params;
 
-      if (!roleName) {
-        return sendError(reply, { message: 'roleName parameter is required' }, 400);
+      if (!groupName) {
+        return sendError(reply, { message: 'groupName parameter is required' }, 400);
       }
 
       try {
-        const users = await getUsersByRole(roleName);
-        return sendSuccess(reply, users, `Found ${users.length} users with role "${roleName}"`);
+        const users = await getUsersByGroup(groupName);
+        return sendSuccess(reply, users, `Found ${users.length} users in group "${groupName}"`);
       } catch (error) {
-        fastify.log.error({ roleName, error: error.message }, 'Failed to get users by role');
-        return sendError(reply, { message: `Failed to get users by role: ${error.message}` }, 500);
+        fastify.log.error({ groupName, error: error.message }, 'Failed to get users by group');
+        return sendError(reply, { message: `Failed to get users by group: ${error.message}` }, 500);
       }
     }
   );
