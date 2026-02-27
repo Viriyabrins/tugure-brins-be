@@ -238,6 +238,18 @@ export class EntityRepository {
             ];
           }
         }
+        if (filters.branch_desc) {
+          where.branch_desc = {
+            contains: String(filters.branch_desc).trim(),
+            mode: 'insensitive',
+          };
+        }
+        if (filters.region_desc) {
+          where.region_desc = {
+            contains: String(filters.region_desc).trim(),
+            mode: 'insensitive',
+          };
+        }
         // Batch status lives on `Batch` table. If provided, find matching batch_ids first.
         if (filters.status && filters.status !== 'all') {
           const matching = await prisma.batch.findMany({ where: { status: filters.status }, select: { batch_id: true } });
