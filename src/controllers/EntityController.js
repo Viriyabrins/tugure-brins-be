@@ -85,6 +85,7 @@ export default class EntityController {
 
   async uploadMasterContracts(request, reply) {
     try {
+      const isReviseMode = String(request.body?.uploadMode || '').toLowerCase() === 'revise';
       const result = await this.entityService.uploadMasterContractsAtomic(
         request.body,
         {
@@ -93,7 +94,13 @@ export default class EntityController {
           headers: request.headers,
         }
       );
-      return sendCreated(reply, result, 'Master contracts uploaded successfully');
+      return sendCreated(
+        reply,
+        result,
+        isReviseMode
+          ? 'Revisi master contract berhasil diproses'
+          : 'Master contracts uploaded successfully'
+      );
     } catch (error) {
       return sendError(reply, error, error.statusCode || 500);
     }

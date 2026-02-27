@@ -140,6 +140,7 @@ export default class EntityService {
     const contracts = Array.isArray(payload.contracts) ? payload.contracts : [];
     const uploadMode = String(payload.uploadMode || 'new').toLowerCase();
     const selectedContractForRevision = payload.selectedContractForRevision || null;
+    const selectedRevisionValue = String(selectedContractForRevision || '').trim();
     const actor = this.resolveAuditActor(context);
 
     if (contracts.length === 0) {
@@ -148,7 +149,7 @@ export default class EntityService {
       throw error;
     }
 
-    if (uploadMode === 'revise' && !selectedContractForRevision) {
+    if (uploadMode === 'revise' && !selectedRevisionValue) {
       const error = new Error('Mode revisi membutuhkan contract yang dipilih.');
       error.statusCode = 400;
       throw error;
@@ -188,11 +189,24 @@ export default class EntityService {
       }
     } else {
       revisionBaseContract = await prisma.masterContract.findUnique({
-        where: { contract_id: String(selectedContractForRevision).trim() },
+        where: { contract_id: selectedRevisionValue },
       });
 
       if (!revisionBaseContract) {
-        const error = new Error('Kontrak yang dipilih untuk revisi tidak ditemukan.');
+        revisionBaseContract = await prisma.masterContract.findFirst({
+          where: {
+            contract_no: selectedRevisionValue,
+            contract_status: {
+              equals: 'REVISION',
+              mode: 'insensitive',
+            },
+          },
+          orderBy: { version: 'desc' },
+        });
+      }
+
+      if (!revisionBaseContract) {
+        const error = new Error('Kontrak yang dipilih untuk revisi tidak ditemukan berdasarkan contract_id atau contract_no.');
         error.statusCode = 404;
         throw error;
       }
@@ -213,7 +227,12 @@ export default class EntityService {
 
       for (let i = 0; i < contracts.length; i += 1) {
         const incomingContractNo = String(contracts[i]?.contract_no || '').trim();
-        if (incomingContractNo && incomingContractNo !== revisionContractNo) {
+        if (!incomingContractNo) {
+          const error = new Error(`Baris ke-${i + 1}: contract_no wajib diisi dan harus sama dengan kontrak yang direvisi (${revisionContractNo}).`);
+          error.statusCode = 400;
+          throw error;
+        }
+        if (incomingContractNo !== revisionContractNo) {
           const error = new Error(`Baris ke-${i + 1}: contract_no harus sama dengan kontrak yang direvisi (${revisionContractNo}).`);
           error.statusCode = 400;
           throw error;
@@ -246,6 +265,18 @@ export default class EntityService {
           }, 0);
 
           revisionVersionStart = maxVersion + 1;
+
+          const { ...archivedRevisionPayload } = revisionBaseContract;
+          await tx.contractRevise.create({
+            data: {
+              ...archivedRevisionPayload,
+              contract_status: 'REVISION',
+            },
+          });
+
+          await tx.masterContract.delete({
+            where: { contract_id: revisionBaseContract.contract_id },
+          });
         }
 
         for (let i = 0; i < contracts.length; i += 1) {

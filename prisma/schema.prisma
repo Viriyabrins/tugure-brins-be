@@ -492,6 +492,119 @@ model Record {
   @@map("record")
 }
 
+model ContractRevise {
+  contract_id                String   @id
+
+  // === Identitas & Input ===
+  underwriter_name           String?
+  input_date                 DateTime?
+  input_status               String?
+  contract_status            String   @default("REVISION")
+
+  // === Pihak Terkait ===
+  source_type                String?
+  source_name                String?
+  ceding_name                String?
+  ceding_same_as_source      Boolean  @default(false)
+  bank_obligee               String?
+
+  // === Endorsement ===
+  endorsement_type           String?
+  endorsement_reason         String?
+  endorsement_reason_detail  String?
+
+  // === Detail Kontrak ===
+  kind_of_business           String?
+  offer_date                 DateTime?
+  contract_no                String?
+  binder_no_tugure           String?
+  contract_no_from           String?
+  binder_no_from             String?
+  type_of_contract           String?
+  policy_no                  String?
+  program_id                 String?
+
+  // === Produk & Kredit ===
+  product_type               String?
+  product_name               String?
+  credit_type                String?
+  debtor_principal           String?
+  loan_type                  String?
+  loan_type_desc             String?
+
+  // === Periode Coverage ===
+  contract_start_date        DateTime?
+  contract_end_date          DateTime?
+  effective_date             DateTime?
+  stnc_date                  DateTime?
+
+  // === Retrocession & Cession ===
+  outward_retrocession       String?  @default("Tidak")
+  automatic_cession          String?  @default("Tidak")
+  retro_program              String?
+
+  // === Rate & Komisi ===
+  share_tugure_percentage    Decimal? @db.Decimal(5, 2)
+  premium_rate               Decimal? @db.Decimal(5, 2)
+  reinsurance_commission_pct Decimal? @db.Decimal(5, 2)
+  profit_commission_pct      Decimal? @db.Decimal(5, 2)
+  brokerage_fee_pct          Decimal? @db.Decimal(5, 2)
+
+  // === Reporting & Payment ===
+  reporting_participant_days Int?
+  reporting_claim_days       Int?
+  claim_reporting_type       String?
+  payment_scenario           String?
+  installment_frequency      String?
+
+  // === Stop Loss ===
+  stop_loss_value            Decimal? @db.Decimal(25, 2)
+  stop_loss_basis            String?
+
+  // === Cut Loss ===
+  cut_loss_value             Decimal? @db.Decimal(25, 2)
+  cut_loss_basis             String?
+
+  // === Cut Off ===
+  cut_off_value              Decimal? @db.Decimal(25, 2)
+  cut_off_basis              String?
+
+  // === Loss Ratio ===
+  loss_ratio_value           Decimal? @db.Decimal(5, 2)
+  loss_ratio_basis           String?
+
+  // === Evaluation Period ===
+  evaluation_period_value    Int?
+  evaluation_period_unit     String?
+
+  // === Tenor & Plafond ===
+  max_tenor_value            Int?
+  max_tenor_unit             String?
+  max_sum_insured            Decimal? @db.Decimal(25, 2)
+
+  // === Coverage Limit ===
+  perils_covers              String?
+  limit_coverage_type        String?
+  kolektibilitas_max         String?
+  kolektibilitas_limit_amount Decimal? @db.Decimal(25, 2)
+
+  // === Metadata ===
+  allowed_region             String?
+  currency                   String   @default("IDR")
+  remark                     String?
+  version                    Int      @default(1)
+  parent_contract_id         String?
+
+  // === Approval ===
+  first_approved_by          String?
+  first_approved_date        DateTime?
+  second_approved_by         String?
+  second_approved_date       DateTime?
+  revision_reason            String?
+
+  @@map("ContractRevise")
+}
+
 model ReviseLog {
   id                       String   @id @default(cuid())
   debtor_id                String?

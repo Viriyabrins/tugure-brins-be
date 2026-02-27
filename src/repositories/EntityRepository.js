@@ -21,6 +21,7 @@ const ALLOWED_ENTITIES = [
   'Invoice',
   'DebitCreditNote',
   'AuditLog',
+  'ContractRevise',
   'ReviseLog',
 ];
 
@@ -281,8 +282,98 @@ export class EntityRepository {
     }
 
     if (prisma.masterContract && entity === 'MasterContract') {
-      const total = await prisma.masterContract.count();
-      const rows = await prisma.masterContract.findMany({ ...paginationOpts, orderBy: { contract_id: direction } });
+      const where = {};
+      if (filters) {
+        const keyword = String(filters.contractId || '').trim();
+        if (keyword) {
+          where.OR = [
+            { contract_id: { contains: keyword } },
+            { contract_no: { contains: keyword } },
+            { policy_no: { contains: keyword } },
+            { source_name: { contains: keyword } },
+            { ceding_name: { contains: keyword } },
+          ];
+        }
+
+        if (filters.productType && filters.productType !== 'all') {
+          where.product_type = { equals: String(filters.productType) };
+        }
+
+        if (filters.creditType && filters.creditType !== 'all') {
+          where.credit_type = { equals: String(filters.creditType) };
+        }
+
+        if (filters.status && filters.status !== 'all') {
+          const rawStatus = String(filters.status).trim();
+          const normalizedStatus = rawStatus.toUpperCase();
+          if (normalizedStatus !== 'REVISION') {
+            where.contract_status = {
+              in: [
+                rawStatus,
+                normalizedStatus,
+                rawStatus.toLowerCase(),
+                rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1).toLowerCase(),
+              ],
+            };
+          }
+        }
+
+        if (filters.startDate || filters.endDate) {
+          where.input_date = {};
+          if (filters.startDate) where.input_date.gte = new Date(filters.startDate);
+          if (filters.endDate) where.input_date.lte = new Date(filters.endDate);
+        }
+      }
+
+      const total = await prisma.masterContract.count({ where });
+      const rows = await prisma.masterContract.findMany({ where, ...paginationOpts, orderBy: { contract_id: direction } });
+      return { data: rows.map((r) => ({ id: r.contract_id, ...r })), total };
+    }
+
+    if (prisma.contractRevise && entity === 'ContractRevise') {
+      const where = {};
+      if (filters) {
+        const keyword = String(filters.contractId || '').trim();
+        if (keyword) {
+          where.OR = [
+            { contract_id: { contains: keyword } },
+            { contract_no: { contains: keyword } },
+            { policy_no: { contains: keyword } },
+            { source_name: { contains: keyword } },
+            { ceding_name: { contains: keyword } },
+          ];
+        }
+
+        if (filters.productType && filters.productType !== 'all') {
+          where.product_type = { equals: String(filters.productType) };
+        }
+
+        if (filters.creditType && filters.creditType !== 'all') {
+          where.credit_type = { equals: String(filters.creditType) };
+        }
+
+        if (filters.status && filters.status !== 'all') {
+          const rawStatus = String(filters.status).trim();
+          const normalizedStatus = rawStatus.toUpperCase();
+          where.contract_status = {
+            in: [
+              rawStatus,
+              normalizedStatus,
+              rawStatus.toLowerCase(),
+              rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1).toLowerCase(),
+            ],
+          };
+        }
+
+        if (filters.startDate || filters.endDate) {
+          where.input_date = {};
+          if (filters.startDate) where.input_date.gte = new Date(filters.startDate);
+          if (filters.endDate) where.input_date.lte = new Date(filters.endDate);
+        }
+      }
+
+      const total = await prisma.contractRevise.count({ where });
+      const rows = await prisma.contractRevise.findMany({ where, ...paginationOpts, orderBy: { contract_id: direction } });
       return { data: rows.map((r) => ({ id: r.contract_id, ...r })), total };
     }
 
@@ -423,6 +514,11 @@ export class EntityRepository {
       return r ? { id: r.contract_id, ...r } : null;
     }
 
+    if (prisma.contractRevise && entity === 'ContractRevise') {
+      const r = await prisma.contractRevise.findUnique({ where: { contract_id: id } });
+      return r ? { id: r.contract_id, ...r } : null;
+    }
+
     if (prisma.nota && entity === 'Nota') {
       const r = await prisma.nota.findUnique({ where: { nota_number: id } });
       return r ? { id: r.nota_number, ...r } : null;
@@ -501,6 +597,11 @@ export class EntityRepository {
 
     if (entity === 'MasterContract' && prisma.masterContract && prisma.masterContract.create) {
       const r = await prisma.masterContract.create({ data: payload });
+      return { id: r.contract_id, ...r };
+    }
+
+    if (entity === 'ContractRevise' && prisma.contractRevise && prisma.contractRevise.create) {
+      const r = await prisma.contractRevise.create({ data: payload });
       return { id: r.contract_id, ...r };
     }
 
@@ -678,6 +779,13 @@ export class EntityRepository {
       return { id: r.contract_id, ...r };
     }
 
+    if (entity === 'ContractRevise' && prisma.contractRevise && prisma.contractRevise.update) {
+      const existing = await prisma.contractRevise.findUnique({ where: { contract_id: id } });
+      if (!existing) return null;
+      const r = await prisma.contractRevise.update({ where: { contract_id: id }, data: payload });
+      return { id: r.contract_id, ...r };
+    }
+
     // Dedicated model updates (Nota)
     if (entity === 'Nota' && prisma.nota && prisma.nota.update) {
       const existing = await prisma.nota.findUnique({ where: { nota_number: id } });
@@ -837,6 +945,13 @@ export class EntityRepository {
       const existing = await prisma.SlaRule.findUnique({ where: { id } });
       if (!existing) return null;
       await prisma.SlaRule.delete({ where: { id } });
+      return { id };
+    }
+
+    if (entity === 'ContractRevise' && prisma.contractRevise && prisma.contractRevise.delete) {
+      const existing = await prisma.contractRevise.findUnique({ where: { contract_id: id } });
+      if (!existing) return null;
+      await prisma.contractRevise.delete({ where: { contract_id: id } });
       return { id };
     }
     
