@@ -48,7 +48,15 @@ const config = {
   keycloakRealm: process.env.KEYCLOAK_REALM || process.env.VITE_KEYCLOAK_REALM,
   keycloakClientId: process.env.KEYCLOAK_CLIENT_ID || process.env.VITE_KEYCLOAK_CLIENT_ID,
   keycloakClientSecret: process.env.KEYCLOAK_CLIENT_SECRET || process.env.VITE_KEYCLOAK_CLIENT_SECRET,
-  frontendUrl: process.env.FRONTEND_URL || process.env.VITE_KEYCLOAK_REDIRECT_URI || 'http://localhost:5173/Dashboard'
+  frontendUrl: process.env.FRONTEND_URL || process.env.VITE_KEYCLOAK_REDIRECT_URI || 'http://localhost:5173/Dashboard',
+  smtp: {
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: process.env.SMTP_SECURE === 'true',
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+    fromName: process.env.SMTP_FROM_NAME || 'Tugure BRINS System',
+  },
 };
 
 export default config;
