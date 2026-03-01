@@ -208,6 +208,137 @@ export default class KeycloakBrokerService {
         return true;
     }
 
+    /**
+     * Obtain a service-account (client_credentials) token so we can call the
+     * Keycloak Admin REST API.  The confidential client must have the
+     * "Service Accounts Enabled" toggle ON and its service-account user must
+     * hold the `manage-users` role from the `realm-management` client.
+     */
+    async _getAdminToken() {
+        const body = new URLSearchParams({
+            grant_type: 'client_credentials',
+            client_id: this.config.keycloakClientId,
+            client_secret: this.config.keycloakClientSecret,
+        });
+
+        const response = await fetch(this.tokenEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body,
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.access_token) {
+            const error = new Error(
+                payload.error_description || payload.error || 'Failed to obtain admin token',
+            );
+            error.statusCode = 500;
+            throw error;
+        }
+
+        return payload.access_token;
+    }
+
+    /**
+     * Verify a user's current password by attempting a Resource Owner
+     * Password Credentials (direct-access) grant against Keycloak.
+     * Returns true when the credentials are valid, false otherwise.
+     *
+     * NOTE: The Keycloak client must have "Direct Access Grants Enabled".
+     */
+    async _verifyUserPassword(username, password) {
+        const body = new URLSearchParams({
+            grant_type: 'password',
+            client_id: this.config.keycloakClientId,
+            client_secret: this.config.keycloakClientSecret,
+            username,
+            password,
+            scope: 'openid',
+        });
+
+        const response = await fetch(this.tokenEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body,
+        });
+
+        return response.ok;
+    }
+
+    /**
+     * Change a Keycloak user's password.
+     *
+     * Flow:
+     *  1. Verify the current password via direct-access grant.
+     *  2. Obtain an admin (service-account) token.
+     *  3. Call the Admin REST API to reset the user's password.
+     *
+     * @param {object} params
+     * @param {string} params.userId        – Keycloak user ID (sub)
+     * @param {string} params.username       – Keycloak username / preferred_username
+     * @param {string} params.currentPassword
+     * @param {string} params.newPassword
+     */
+    async changePassword({ userId, username, currentPassword, newPassword }) {
+        this.ensureConfigured();
+
+        if (!userId || !username) {
+            const error = new Error('User identity is required');
+            error.statusCode = 400;
+            throw error;
+        }
+        if (!currentPassword) {
+            const error = new Error('Current password is required');
+            error.statusCode = 400;
+            throw error;
+        }
+        if (!newPassword || newPassword.length < 6) {
+            const error = new Error('New password must be at least 6 characters');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // 1. Verify the current password
+        const isValid = await this._verifyUserPassword(username, currentPassword);
+        if (!isValid) {
+            const error = new Error('Current password is incorrect');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // 2. Get admin token
+        const adminToken = await this._getAdminToken();
+
+        // 3. Reset password via Admin REST API
+        const root = this.config.keycloakUrl.replace(/\/$/, '');
+        const realm = encodeURIComponent(this.config.keycloakRealm);
+        const resetUrl = `${root}/admin/realms/${realm}/users/${encodeURIComponent(userId)}/reset-password`;
+
+        const response = await fetch(resetUrl, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${adminToken}`,
+            },
+            body: JSON.stringify({
+                type: 'password',
+                value: newPassword,
+                temporary: false,
+            }),
+        });
+
+        if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            const error = new Error(
+                payload.errorMessage || payload.error || 'Failed to change password in Keycloak',
+            );
+            error.statusCode = response.status || 500;
+            throw error;
+        }
+
+        return true;
+    }
+
     buildFrontendCallbackUrl(frontendRedirectUri, tokens) {
         const payload = decodeJwtPayload(tokens.accessToken) || {};
         const params = new URLSearchParams({

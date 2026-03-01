@@ -104,6 +104,34 @@ export default async function (fastify) {
     }
   });
 
+  fastify.post('/auth/keycloak/change-password', { preHandler: fastify.authenticate }, async (request, reply) => {
+    try {
+      const { currentPassword, newPassword } = request.body || {};
+
+      // user.id comes from the JWT "sub" claim set during authentication
+      const userId = request.user?.id;
+      // preferred_username is typically the Keycloak login name
+      const username =
+        request.user?.preferredUsername ||
+        request.user?.preferred_username ||
+        request.user?.email;
+
+      await keycloakBroker.changePassword({
+        userId,
+        username,
+        currentPassword,
+        newPassword,
+      });
+
+      return reply.send({ success: true, message: 'Password changed successfully' });
+    } catch (error) {
+      return reply.status(error.statusCode || 500).send({
+        success: false,
+        message: error.message,
+      });
+    }
+  });
+
   fastify.post('/apps/:appId/auth/login', controller.login.bind(controller));
   fastify.get('/apps/:appId/entities/User/me', { preHandler: fastify.authenticate }, controller.me.bind(controller));
 }
