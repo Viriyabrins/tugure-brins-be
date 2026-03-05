@@ -89,30 +89,26 @@ model Claim {
   no_fasilitas_kredit     String?
   bdo_premi               String?
   tanggal_realisasi_kredit DateTime?
-  plafond                 Decimal? @db.Decimal(25, 2)
-  max_coverage            Decimal? @db.Decimal(25, 2)
-  kol_debitur             String?
-  dol                     DateTime?
-  nilai_klaim             Decimal   @db.Decimal(25, 2)
-  share_tugure_percentage Decimal? @db.Decimal(5, 2)
-  share_tugure_amount     Decimal? @db.Decimal(25, 2)
-  check_bdo_premi         Boolean   @default(false)
-  batch_id                String?
-  version_no              Int       @default(1)
-  status                  String    @default("Draft")
-  debtor_id               String?
-  contract_id             String?
-  checked_by              String?
-  checked_date            DateTime?
-  doc_verified_by         String?
-  doc_verified_date       DateTime?
-  invoiced_by             String?
-  invoiced_date           DateTime?
-  paid_by                 String?
-  paid_date               DateTime?
-  revision_reason        String?
-  reviewed_by             String?
-  review_date             DateTime?
+  plafond                  Decimal?  @db.Decimal(25, 2)
+  max_coverage             Decimal?  @db.Decimal(25, 2)
+  kol_debitur              String?
+  dol                      DateTime?
+  nilai_klaim              Decimal   @db.Decimal(25, 2)
+  share_tugure_percentage  Decimal?  @db.Decimal(5, 2)
+  share_tugure_amount      Decimal?  @db.Decimal(25, 2)
+  check_bdo_premi          Boolean   @default(false)
+  batch_id                 String?
+  version_no               Int       @default(1)
+  status                   String    @default("Draft")
+  debtor_id                String?
+  contract_id              String?
+  checked_by               String?
+  checked_date             DateTime?
+  approved_by              String?
+  approved_date            DateTime?
+  revision_reason          String?
+  reviewed_by              String?
+  review_date              DateTime?
   @@map("claim")
 }
 
