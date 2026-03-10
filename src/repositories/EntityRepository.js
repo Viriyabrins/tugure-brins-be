@@ -276,8 +276,32 @@ export class EntityRepository {
     }
 
     if (prisma.claim && entity === 'Claim') {
-      const total = await prisma.claim.count();
-      const rows = await prisma.claim.findMany({ ...paginationOpts, orderBy: { claim_no: direction } });
+      const where = {};
+      if (filters) {
+        if (filters.contract && filters.contract !== 'all') {
+          where.contract_id = filters.contract;
+        }
+        if (filters.batch && filters.batch !== 'all') {
+          where.batch_id = { contains: filters.batch, mode: 'insensitive' };
+        }
+        if (filters.claimStatus && filters.claimStatus !== 'all') {
+          where.status = filters.claimStatus;
+        }
+        if (filters.name) {
+          const keyword = String(filters.name).trim();
+          if (keyword) {
+            where.OR = [
+              { claim_no: { contains: keyword, mode: 'insensitive' } },
+              { nama_tertanggung: { contains: keyword, mode: 'insensitive' } },
+              { nomor_peserta: { contains: keyword, mode: 'insensitive' } },
+              { batch_id: { contains: keyword, mode: 'insensitive' } },
+            ];
+          }
+        }
+      }
+
+      const total = await prisma.claim.count({ where });
+      const rows = await prisma.claim.findMany({ where, ...paginationOpts, orderBy: { claim_no: direction } });
       return { data: rows.map((r) => ({ id: r.claim_no, ...r })), total };
     }
 
