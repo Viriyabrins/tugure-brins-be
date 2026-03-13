@@ -157,6 +157,9 @@ export default class EntityService {
 
     let revisionBaseContract = null;
     let revisionContractNo = null;
+    // Holds full records of REVISION-status contracts found during 'new' mode upload
+    // so they can be archived to ContractRevise inside the transaction.
+    let revisionContractsToArchive = [];
 
     if (uploadMode === 'new') {
       const contractIds = contracts
@@ -178,14 +181,31 @@ export default class EntityService {
 
       const existing = await prisma.masterContract.findMany({
         where: { contract_id: { in: contractIds } },
-        select: { contract_id: true },
+        select: { contract_id: true, contract_status: true },
       });
 
-      if (existing.length > 0) {
-        const existsList = existing.map((item) => item.contract_id).join(', ');
+      // Only reject contract_ids that are NOT in REVISION status.
+      // Contracts in REVISION status will be archived and replaced by the new upload.
+      const nonRevisionConflicts = existing.filter(
+        (item) => String(item.contract_status || '').trim().toUpperCase() !== 'REVISION'
+      );
+
+      if (nonRevisionConflicts.length > 0) {
+        const existsList = nonRevisionConflicts.map((item) => item.contract_id).join(', ');
         const error = new Error(`Upload dibatalkan karena contract_id sudah terdaftar: ${existsList}`);
         error.statusCode = 409;
         throw error;
+      }
+
+      // Fetch full data of REVISION contracts so we can archive them inside the transaction.
+      const revisionIds = existing
+        .filter((item) => String(item.contract_status || '').trim().toUpperCase() === 'REVISION')
+        .map((item) => item.contract_id);
+
+      if (revisionIds.length > 0) {
+        revisionContractsToArchive = await prisma.masterContract.findMany({
+          where: { contract_id: { in: revisionIds } },
+        });
       }
     } else {
       revisionBaseContract = await prisma.masterContract.findUnique({
@@ -267,16 +287,31 @@ export default class EntityService {
           revisionVersionStart = maxVersion + 1;
 
           const { ...archivedRevisionPayload } = revisionBaseContract;
-          await tx.contractRevise.create({
-            data: {
-              ...archivedRevisionPayload,
-              contract_status: 'REVISION',
-            },
+          await tx.contractRevise.upsert({
+            where: { contract_id: archivedRevisionPayload.contract_id },
+            create: { ...archivedRevisionPayload, contract_status: 'REVISION' },
+            update: { ...archivedRevisionPayload, contract_status: 'REVISION' },
           });
 
           await tx.masterContract.delete({
             where: { contract_id: revisionBaseContract.contract_id },
           });
+        }
+
+        // For 'new' mode: archive any REVISION contracts whose contract_id appears in the upload,
+        // then delete them so the new data can be inserted with the same contract_id.
+        if (uploadMode === 'new' && revisionContractsToArchive.length > 0) {
+          for (const archiveContract of revisionContractsToArchive) {
+            const { ...archivePayload } = archiveContract;
+            await tx.contractRevise.upsert({
+              where: { contract_id: archivePayload.contract_id },
+              create: { ...archivePayload, contract_status: 'REVISION' },
+              update: { ...archivePayload, contract_status: 'REVISION' },
+            });
+            await tx.masterContract.delete({
+              where: { contract_id: archiveContract.contract_id },
+            });
+          }
         }
 
         for (let i = 0; i < contracts.length; i += 1) {
