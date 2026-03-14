@@ -210,6 +210,7 @@ export class EntityRepository {
       if (filters) {
         if (filters.contract && filters.contract !== 'all') where.contract_id = filters.contract;
         if (filters.batch) where.batch_id = { contains: filters.batch };
+        if (filters.bordero_id) where.bordero_id = filters.bordero_id;
         // Debtor model uses `status` for underwriting status
         if (filters.submitStatus && filters.submitStatus !== 'all') where.status = filters.submitStatus;
         if (filters.status && filters.status !== 'all' && !filters.submitStatus) where.status = filters.status;

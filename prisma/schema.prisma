@@ -67,14 +67,13 @@ model Bordero {
   batch_id     String
   period       String
   total_debtors Int?
-  total_exposure Decimal? @db.Decimal(25, 2)
-  total_premium  Decimal? @db.Decimal(25, 2)
+  total_plafon Decimal? @db.Decimal(25, 2)
+  total_nominal_premi Decimal? @db.Decimal(25, 2)
+  total_net_premi Decimal? @db.Decimal(25, 2)
+  total_premium_amount Decimal? @db.Decimal(25, 2)
+  total_ric_amount Decimal? @db.Decimal(25, 2)
+  total_bf_amount Decimal? @db.Decimal(25, 2)
   currency     String   @default("IDR")
-  status       String   @default("GENERATED")
-  reviewed_by  String?
-  reviewed_date DateTime?
-  finalized_by String?
-  finalized_date DateTime?
   debtors      Debtor[]
   @@map("bordero")
 }
