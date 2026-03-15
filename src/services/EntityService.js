@@ -245,15 +245,18 @@ export default class EntityService {
         throw error;
       }
 
+      const revisionContractBase = (String(revisionContractNo).match(/^(.*?)(?:_V\d+_.*)?$/i) || [revisionContractNo])[1];
+
       for (let i = 0; i < contracts.length; i += 1) {
         const incomingContractNo = String(contracts[i]?.contract_no || '').trim();
         if (!incomingContractNo) {
-          const error = new Error(`Baris ke-${i + 1}: contract_no wajib diisi dan harus sama dengan kontrak yang direvisi (${revisionContractNo}).`);
+          const error = new Error(`Baris ke-${i + 1}: contract_no wajib diisi dan harus sama dengan kontrak yang direvisi (${revisionContractBase}).`);
           error.statusCode = 400;
           throw error;
         }
-        if (incomingContractNo !== revisionContractNo) {
-          const error = new Error(`Baris ke-${i + 1}: contract_no harus sama dengan kontrak yang direvisi (${revisionContractNo}).`);
+        const incomingBase = (String(incomingContractNo).match(/^(.*?)(?:_V\d+_.*)?$/i) || [incomingContractNo])[1];
+        if (incomingBase !== revisionContractBase) {
+          const error = new Error(`Baris ke-${i + 1}: contract_no harus sama dengan kontrak yang direvisi (${revisionContractBase}).`);
           error.statusCode = 400;
           throw error;
         }
@@ -272,9 +275,35 @@ export default class EntityService {
             .replace(/^-+|-+$/g, '')
             .slice(0, 45);
 
+        const getJakartaTimestamp = () => {
+          const dt = new Date();
+          const parts = new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Jakarta',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+          }).formatToParts(dt);
+          const map = {};
+          parts.forEach((p) => {
+            if (p.type !== 'literal') map[p.type] = p.value;
+          });
+          return `${map.year}${map.month}${map.day}${map.hour}${map.minute}${map.second}`;
+        };
+
+        const extractBaseContractNo = (cn) => {
+          if (!cn) return '';
+          const m = String(cn).match(/^(.*?)(?:_V\d+_.*)?$/i);
+          return m ? m[1] : String(cn);
+        };
+
         if (uploadMode === 'revise') {
+          const baseContractNoForSearch = extractBaseContractNo(revisionContractNo || revisionBaseContract.contract_no || '');
           const versionRows = await tx.masterContract.findMany({
-            where: { contract_no: revisionContractNo },
+            where: { contract_no: { startsWith: baseContractNoForSearch } },
             select: { version: true },
           });
 
@@ -322,11 +351,23 @@ export default class EntityService {
             const baseId = sanitizeIdPart(revisionBaseContract.contract_id || revisionContractNo || 'MC');
             const candidateId = `${baseId}-REV-${String(nextVersion).padStart(3, '0')}`;
 
+            const baseContractNo = extractBaseContractNo(revisionContractNo || revisionBaseContract.contract_no || revisionBaseContract.contract_no_from || 'MC');
+            const timestamp = getJakartaTimestamp();
+
             row.contract_id = candidateId;
-            row.contract_no = revisionContractNo;
             row.version = nextVersion;
             row.parent_contract_id = revisionBaseContract.contract_id;
             row.contract_status = row.contract_status || 'Draft';
+            row.contract_no_from = baseContractNo;
+            row.contract_no = `${baseContractNo}_V${nextVersion}_${timestamp}`;
+          } else {
+            // new upload mode: assign initial versioning V1 with Jakarta timestamp
+            const incomingBase = extractBaseContractNo(row.contract_no || row.contract_id || 'MC');
+            const baseContractNo = incomingBase || sanitizeIdPart(row.contract_id || 'MC');
+            const timestamp = getJakartaTimestamp();
+            row.version = 1;
+            row.contract_no_from = baseContractNo;
+            row.contract_no = `${baseContractNo}_V1_${timestamp}`;
           }
 
           try {

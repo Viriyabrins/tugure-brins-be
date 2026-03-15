@@ -410,7 +410,8 @@ export class EntityRepository {
       }
 
       const total = await prisma.contractRevise.count({ where });
-      const rows = await prisma.contractRevise.findMany({ where, ...paginationOpts, orderBy: { contract_id: direction } });
+      // Order revisions by version DESC so the newest revision appears first
+      const rows = await prisma.contractRevise.findMany({ where, ...paginationOpts, orderBy: { version: 'desc' } });
       return { data: rows.map((r) => ({ id: r.contract_id, ...r })), total };
     }
 
