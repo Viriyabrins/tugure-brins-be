@@ -540,7 +540,22 @@ export default class EntityService {
     return record;
   }
 
-  async update(entity, id, payload) {
+  async update(entity, id, payload, context = {}) {
+    // For Nota updates, validate BRINS roles only
+    if (entity === 'Nota') {
+      const userRoles = context?.user?.application_roles || [];
+      const isBrinsRole = userRoles.some(r => {
+        const normalizedRole = String(r).trim().toLowerCase();
+        return ['approver-brins-role', 'checker-brins-role', 'maker-brins-role'].includes(normalizedRole);
+      });
+      
+      if (!isBrinsRole) {
+        const error = new Error('Only BRINS roles can update Nota status');
+        error.statusCode = 403;
+        throw error;
+      }
+    }
+
     let previousDebtor = null;
     if (entity === 'Debtor') {
       previousDebtor = await this.entityRepository.get(entity, id);

@@ -66,7 +66,12 @@ export default class EntityController {
       const entity = await this.entityService.update(
         request.params.entityName,
         request.params.id,
-        request.body
+        request.body,
+        {
+          user: request.user,
+          ipAddress: request.ip,
+          headers: request.headers,
+        }
       );
       return sendSuccess(reply, entity, 'Entity updated');
     } catch (error) {
