@@ -575,6 +575,301 @@ export default class EntityService {
     return record;
   }
 
+  async uploadDebtorsAtomic(payload = {}, context = {}) {
+    const debtors = Array.isArray(payload.debtors) ? payload.debtors : [];
+    const uploadMode = String(payload.uploadMode || 'new').toLowerCase();
+    const selectedDebtorForRevision = payload.selectedDebtorForRevision || null;
+    const selectedRevisionValue = String(selectedDebtorForRevision || '').trim();
+    const actor = this.resolveAuditActor(context);
+
+    if (debtors.length === 0) {
+      const error = new Error('File upload kosong. Tidak ada data debtor yang bisa diproses.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (uploadMode === 'revise' && !selectedRevisionValue) {
+      const error = new Error('Mode revisi membutuhkan debtor yang dipilih.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    let revisionBaseDebtor = null;
+    let revisionNomorPeserta = null;
+    let revisionDebtorsToArchive = [];
+    let revisionDebtorMap = null;
+    let nextVersionMap = null;  // For pre-calculated versions in revision mode
+
+    if (uploadMode === 'new') {
+      // Validate that all debtors have nomor_peserta
+      const nomorPesertas = debtors
+        .map((item) => String(item?.nomor_peserta || '').trim())
+        .filter(Boolean);
+
+      if (nomorPesertas.length !== debtors.length) {
+        const error = new Error('Sebagian baris tidak memiliki nomor_peserta yang valid. Periksa kembali template upload.');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      // Check for duplicates in file
+      const duplicateInFile = nomorPesertas.find((np, index) => nomorPesertas.indexOf(np) !== index);
+      if (duplicateInFile) {
+        const error = new Error(`Terdapat nomor_peserta duplikat di file upload: ${duplicateInFile}`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const existing = await prisma.debtor.findMany({
+        where: { nomor_peserta: { in: nomorPesertas } },
+        select: { 
+          id: true,
+          nomor_peserta: true, 
+          status: true,
+          batch_id: true,
+          contract_id: true,
+        },
+      });
+
+      // Only reject nomor_peserta that are NOT in REVISION status
+      const nonRevisionConflicts = existing.filter(
+        (item) => String(item.status || '').trim().toUpperCase() !== 'REVISION'
+      );
+
+      if (nonRevisionConflicts.length > 0) {
+        const existsList = nonRevisionConflicts.map((item) => item.nomor_peserta).join(', ');
+        const error = new Error(`Upload dibatalkan karena nomor_peserta sudah terdaftar: ${existsList}`);
+        error.statusCode = 409;
+        throw error;
+      }
+
+      // Fetch full data of REVISION debtors to archive them
+      const revisionIds = existing
+        .filter((item) => String(item.status || '').trim().toUpperCase() === 'REVISION')
+        .map((item) => item.id);
+
+      if (revisionIds.length > 0) {
+        revisionDebtorsToArchive = await prisma.debtor.findMany({
+          where: { id: { in: revisionIds } },
+        });
+      }
+
+      // Initialize empty revisionDebtorMap for 'new' mode (not needed but keep for consistency)
+      revisionDebtorMap = new Map();
+    } else {
+      // Revise mode: process each debtor individually
+      // Extract all unique nomor_peserta from uploaded debtors
+      const uploadedNomorPesertas = Array.from(
+        new Set(
+          debtors
+            .map((item) => String(item?.nomor_peserta || '').trim())
+            .filter(Boolean)
+        )
+      );
+
+      if (uploadedNomorPesertas.length === 0) {
+        const error = new Error('Mode revisi membutuhkan nomor_peserta dalam data yang diupload.');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      // For revise mode, find existing REVISION debtors for ALL uploaded nomor_peserta
+      // We'll handle each one separately during the transaction
+      const existingRevisionDebtors = await prisma.debtor.findMany({
+        where: {
+          nomor_peserta: { in: uploadedNomorPesertas },
+          status: {
+            equals: 'REVISION',
+            mode: 'insensitive',
+          },
+        },
+      });
+
+      // Create a map of nomor_peserta -> existing revision debtor for quick lookup
+      revisionDebtorMap = new Map(
+        existingRevisionDebtors.map((d) => [d.nomor_peserta, d])
+      );
+
+      // Ensure all uploaded nomor_peserta have at least one REVISION debtor to replace
+      // If not found, it's an error - can't revise something that doesn't exist in REVISION status
+      for (const nomorPeserta of uploadedNomorPesertas) {
+        if (!revisionDebtorMap.has(nomorPeserta)) {
+          const error = new Error(`Debtor dengan nomor_peserta "${nomorPeserta}" tidak ditemukan atau tidak berstatus REVISION.`);
+          error.statusCode = 404;
+          throw error;
+        }
+      }
+
+      // Store for later use in transaction
+      revisionNomorPeserta = uploadedNomorPesertas.join(', ');  // For logging
+
+      // PRE-CALCULATE NEXT VERSION NUMBERS FOR EACH nomor_peserta
+      // Query both Debtor and DebtorRevise tables to find max version
+      nextVersionMap = new Map();
+
+      for (const nomorPeserta of uploadedNomorPesertas) {
+        // Find max version from Debtor table (current records)
+        const debtorVersions = await prisma.debtor.findMany({
+          where: { nomor_peserta: nomorPeserta },
+          select: { version_no: true },
+        });
+
+        // Find max version from DebtorRevise table (archived records)
+        const reviseVersions = await prisma.debtorRevise.findMany({
+          where: { nomor_peserta: nomorPeserta },
+          select: { version_no: true },
+        });
+
+        // Get max from all versions
+        const allVersions = [
+          ...debtorVersions.map((d) => Number(d?.version_no || 0)),
+          ...reviseVersions.map((d) => Number(d?.version_no || 0)),
+        ];
+
+        const maxVersion = allVersions.reduce((max, v) => {
+          if (Number.isFinite(v)) return Math.max(max, v);
+          return max;
+        }, 0);
+
+        nextVersionMap.set(nomorPeserta, maxVersion + 1);
+      }
+    }
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const createdDebtors = [];
+        
+        // For 'new' mode: archive any REVISION debtors whose nomor_peserta appears in upload
+        if (uploadMode === 'new' && revisionDebtorsToArchive.length > 0) {
+          for (const archiveDebtor of revisionDebtorsToArchive) {
+            const { ...archivePayload } = archiveDebtor;
+            await tx.debtorRevise.create({ 
+              data: { 
+                ...archivePayload, 
+                status: 'REVISION',
+                archived_at: new Date(),
+              } 
+            });
+            await tx.debtor.delete({
+              where: { id: archiveDebtor.id },
+            });
+          }
+        }
+
+        // Track version_no per nomor_peserta for revision mode
+        // Build a map: nomor_peserta -> next version number
+        const versionMapByNomorPeserta = new Map();
+
+        // Create new debtors with versioning
+        for (let i = 0; i < debtors.length; i += 1) {
+          const row = { ...(debtors[i] || {}) };
+
+          if (uploadMode === 'revise') {
+            const nomorPeserta = String(row?.nomor_peserta || '').trim();
+            
+            // Get the existing REVISION debtor for this nomor_peserta
+            const revisionDebtor = revisionDebtorMap.get(nomorPeserta);
+            if (!revisionDebtor) {
+              // This should already be caught in validation, but double-check
+              const error = new Error(`Debtor dengan nomor_peserta "${nomorPeserta}" tidak ditemukan atau tidak berstatus REVISION.`);
+              error.statusCode = 404;
+              throw error;
+            }
+
+            // Archive old REVISION debtor to DebtorRevise
+            const { ...archivedPayload } = revisionDebtor;
+            await tx.debtorRevise.create({ 
+              data: { 
+                ...archivedPayload, 
+                status: 'REVISION',
+                archived_at: new Date(),
+              } 
+            });
+
+            // Delete old debtor
+            await tx.debtor.delete({
+              where: { id: revisionDebtor.id },
+            });
+
+            // Use pre-calculated next version for this nomor_peserta
+            const nextVersion = nextVersionMap.get(nomorPeserta) || 1;
+
+            // Set versioning fields
+            row.version_no = nextVersion;
+            row.parent_debtor_id = revisionDebtor.id;
+            row.status = row.status || 'SUBMITTED';
+
+            // Update map for tracking if same nomor_peserta appears multiple times in upload
+            const currentCount = versionMapByNomorPeserta.get(nomorPeserta) || 0;
+            versionMapByNomorPeserta.set(nomorPeserta, currentCount + 1);
+          } else {
+            // 'new' mode versioning
+            row.version_no = 1;
+            row.parent_debtor_id = null;
+          }
+
+          try {
+            const created = await tx.debtor.create({ data: row });
+            createdDebtors.push(created);
+          } catch (error) {
+            const wrappedError = this.buildReadableError(
+              error,
+              `Gagal menyimpan data pada baris ke-${i + 1}.`
+            );
+            if (!wrappedError.message.includes('baris ke-')) {
+              wrappedError.message = `Baris ke-${i + 1}: ${wrappedError.message}`;
+            }
+            throw wrappedError;
+          }
+        }
+
+        // Create audit log
+        await tx.auditLog.create({
+          data: {
+            action: uploadMode === 'revise' ? 'DEBTOR_REVISED_BULK' : 'DEBTOR_UPLOADED_BULK',
+            module: 'DEBTOR',
+            entity_type: 'Debtor',
+            entity_id: createdDebtors.map((item) => item.id).join(', '),
+            old_value: null,
+            new_value: JSON.stringify({
+              upload_mode: uploadMode,
+              total_uploaded: createdDebtors.length,
+              debtor_ids: createdDebtors.map((item) => item.id),
+            }),
+            user_email: actor.user_email,
+            user_role: actor.user_role,
+            reason: uploadMode === 'revise'
+              ? `Bulk revise upload for debtor ${selectedDebtorForRevision} (${revisionNomorPeserta})`
+              : 'Bulk upload from Submit Debtor',
+            ip_address: context?.ipAddress || null,
+          },
+        });
+
+        // Create notification
+        await tx.notification.create({
+          data: {
+            title: uploadMode === 'revise' ? 'Debtor Revision Uploaded' : 'Debtor Uploaded',
+            message: `${createdDebtors.length} debtor berhasil di-upload (${uploadMode}).`,
+            type: 'INFO',
+            module: 'DEBTOR',
+            reference_type: 'Debtor',
+            reference_id: createdDebtors[0]?.id || null,
+            target_role: 'ALL',
+          },
+        });
+
+        return {
+          createdCount: createdDebtors.length,
+          debtors: createdDebtors,
+        };
+      });
+
+      return result;
+    } catch (error) {
+      throw this.buildReadableError(error, 'Upload debtor gagal diproses.');
+    }
+  }
+
   async delete(entity, id) {
     const record = await this.entityRepository.delete(entity, id);
     if (!record) {

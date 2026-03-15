@@ -32,6 +32,12 @@ export default async function (fastify) {
   );
 
   fastify.post(
+    '/apps/:appId/debtors/upload',
+    { preHandler: fastify.authenticate },
+    controller.uploadDebtors.bind(controller)
+  );
+
+  fastify.post(
     '/apps/:appId/master-contracts/:contractId/approval',
     { preHandler: fastify.authenticate },
     controller.processMasterContractApproval.bind(controller)

@@ -22,6 +22,7 @@ const ALLOWED_ENTITIES = [
   'DebitCreditNote',
   'AuditLog',
   'ContractRevise',
+  'DebtorRevise',
   'ReviseLog',
 ];
 
@@ -415,6 +416,41 @@ export class EntityRepository {
       return { data: rows.map((r) => ({ id: r.contract_id, ...r })), total };
     }
 
+    if (prisma.debtorRevise && entity === 'DebtorRevise') {
+      const where = {};
+      if (filters) {
+        const keyword = String(filters.nomorPeserta || filters.nomor_peserta || '').trim();
+        if (keyword) {
+          where.OR = [
+            { nomor_peserta: { contains: keyword } },
+            { nama_peserta: { contains: keyword } },
+            { batch_id: { contains: keyword } },
+          ];
+        }
+
+        if (filters.batch_id) {
+          where.batch_id = String(filters.batch_id);
+        }
+
+        if (filters.contract_id) {
+          where.contract_id = String(filters.contract_id);
+        }
+
+        if (filters.status && filters.status !== 'all') {
+          where.status = { equals: String(filters.status) };
+        }
+      }
+
+      const total = await prisma.debtorRevise.count({ where });
+      // Order revisions by version DESC, then by archived_at DESC so newest appears first
+      const rows = await prisma.debtorRevise.findMany({ 
+        where, 
+        ...paginationOpts, 
+        orderBy: [{ version_no: 'desc' }, { archived_at: 'desc' }] 
+      });
+      return { data: rows.map((r) => ({ id: r.id, ...r })), total };
+    }
+
     if (prisma.paymentIntent && entity === 'PaymentIntent') {
       const total = await prisma.paymentIntent.count();
       const rows = await prisma.paymentIntent.findMany({ ...paginationOpts, orderBy: { intent_id: direction } });
@@ -557,6 +593,11 @@ export class EntityRepository {
       return r ? { id: r.contract_id, ...r } : null;
     }
 
+    if (prisma.debtorRevise && entity === 'DebtorRevise') {
+      const r = await prisma.debtorRevise.findUnique({ where: { id } });
+      return r ? { id: r.id, ...r } : null;
+    }
+
     if (prisma.nota && entity === 'Nota') {
       const r = await prisma.nota.findUnique({ where: { nota_number: id } });
       return r ? { id: r.nota_number, ...r } : null;
@@ -641,6 +682,16 @@ export class EntityRepository {
     if (entity === 'ContractRevise' && prisma.contractRevise && prisma.contractRevise.create) {
       const r = await prisma.contractRevise.create({ data: payload });
       return { id: r.contract_id, ...r };
+    }
+
+    if (entity === 'DebtorRevise' && prisma.debtorRevise && prisma.debtorRevise.create) {
+      try {
+        const r = await prisma.debtorRevise.create({ data: payload });
+        return { id: r.id, ...r };
+      } catch (error) {
+        console.error('DebtorRevise creation error:', error);
+        throw error;
+      }
     }
 
     // Dedicated model creation (PaymentIntent)
@@ -824,6 +875,13 @@ export class EntityRepository {
       return { id: r.contract_id, ...r };
     }
 
+    if (entity === 'DebtorRevise' && prisma.debtorRevise && prisma.debtorRevise.update) {
+      const existing = await prisma.debtorRevise.findUnique({ where: { id } });
+      if (!existing) return null;
+      const r = await prisma.debtorRevise.update({ where: { id }, data: payload });
+      return { id: r.id, ...r };
+    }
+
     // Dedicated model updates (Nota)
     if (entity === 'Nota' && prisma.nota && prisma.nota.update) {
       const existing = await prisma.nota.findUnique({ where: { nota_number: id } });
@@ -990,6 +1048,13 @@ export class EntityRepository {
       const existing = await prisma.contractRevise.findUnique({ where: { contract_id: id } });
       if (!existing) return null;
       await prisma.contractRevise.delete({ where: { contract_id: id } });
+      return { id };
+    }
+
+    if (entity === 'DebtorRevise' && prisma.debtorRevise && prisma.debtorRevise.delete) {
+      const existing = await prisma.debtorRevise.findUnique({ where: { id } });
+      if (!existing) return null;
+      await prisma.debtorRevise.delete({ where: { id } });
       return { id };
     }
     

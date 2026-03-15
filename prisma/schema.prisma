@@ -207,8 +207,60 @@ model Debtor {
   is_locked               Boolean  @default(false)
   revision_reason         String?
   validation_remarks      String?
+  parent_debtor_id        String?  // Reference to prior version (for revision tracking)
 
   @@map("debtor")
+}
+
+model DebtorRevise {
+  id                      String   @id @default(cuid())
+  cover_id                String?
+  program_id              String?
+  batch_id                String
+  bordero_id              String?
+  nomor_rekening_pinjaman String?
+  nomor_peserta           String
+  loan_type               String?
+  loan_type_desc          String?
+  cif_rekening_pinjaman   String?
+  jenis_pengajuan_desc    String?
+  jenis_covering_desc     String?
+  tanggal_mulai_covering  DateTime?
+  tanggal_akhir_covering  DateTime?
+  plafon                  Decimal? @db.Decimal(25, 2)
+  nominal_premi           Decimal? @db.Decimal(25, 2)
+  premi_percentage        Decimal? @db.Decimal(5, 2)
+  premium_amount          Decimal? @db.Decimal(25, 2)
+  ric_percentage          Decimal? @db.Decimal(5, 2)
+  ric_amount              Decimal? @db.Decimal(25, 2)
+  bf_percentage           Decimal? @db.Decimal(5, 2)
+  bf_amount               Decimal? @db.Decimal(25, 2)
+  net_premi               Decimal? @db.Decimal(25, 2)
+  unit_code               String?
+  unit_desc               String?
+  branch_desc             String?
+  region_desc             String?
+  nama_peserta            String
+  alamat_usaha            String?
+  nomor_perjanjian_kredit String?
+  tanggal_terima          DateTime?
+  tanggal_validasi        DateTime?
+  teller_premium_date     DateTime?
+  status_aktif            Int?
+  remark_premi            String?
+  flag_restruk            Int?
+  kolektabilitas          Int?
+  contract_id             String?
+  policy_no               String?
+  version_no              Int      @default(1)
+  status                  String   @default("DRAFT")
+  is_locked               Boolean  @default(false)
+  revision_reason         String?
+  validation_remarks      String?
+  parent_debtor_id        String?
+  archived_at             DateTime @default(now())  // When this revision was archived
+
+  @@map("debtorrevise")
 }
 
 model Document {

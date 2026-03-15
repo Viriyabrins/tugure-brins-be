@@ -106,6 +106,29 @@ export default class EntityController {
     }
   }
 
+  async uploadDebtors(request, reply) {
+    try {
+      const isReviseMode = String(request.body?.uploadMode || '').toLowerCase() === 'revise';
+      const result = await this.entityService.uploadDebtorsAtomic(
+        request.body,
+        {
+          user: request.user,
+          ipAddress: request.ip,
+          headers: request.headers,
+        }
+      );
+      return sendCreated(
+        reply,
+        result,
+        isReviseMode
+          ? 'Revisi debtor berhasil diproses'
+          : 'Debtors uploaded successfully'
+      );
+    } catch (error) {
+      return sendError(reply, error, error.statusCode || 500);
+    }
+  }
+
   async processMasterContractApproval(request, reply) {
     try {
       const result = await this.entityService.processMasterContractApprovalAtomic(
