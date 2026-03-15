@@ -135,6 +135,10 @@ jobs:
             # Ensure latest image is available
             podman pull "${IMAGE}" || true
 
+            # Prune podman images older than 24 hours to free disk space
+            echo "Pruning podman images older than 24 hours..."
+            podman image prune -a --filter "until=24h" -f || true
+
             # Deploy relies on the container entrypoint to run migrations at startup when DATABASE_URL is provided
             echo "Migrations will be executed by the container entrypoint if DATABASE_URL is set."
             podman rm -f brins-be-staging >/dev/null 2>&1 || true
