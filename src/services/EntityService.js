@@ -690,24 +690,38 @@ export default class EntityService {
         existingRevisionDebtors.map((d) => [d.nomor_peserta, d])
       );
 
-      // Ensure all uploaded nomor_peserta have at least one REVISION debtor to replace
-      // If not found, it's an error - can't revise something that doesn't exist in REVISION status
-      for (const nomorPeserta of uploadedNomorPesertas) {
-        if (!revisionDebtorMap.has(nomorPeserta)) {
-          const error = new Error(`Debtor dengan nomor_peserta "${nomorPeserta}" tidak ditemukan atau tidak berstatus REVISION.`);
-          error.statusCode = 404;
-          throw error;
-        }
+      // Filter to only process debtors with REVISION status
+      // This allows user to upload a full batch file but only revise the ones marked REVISION
+      const revisionableNomorPesertas = Array.from(revisionDebtorMap.keys());
+      
+      if (revisionableNomorPesertas.length === 0) {
+        const error = new Error(`Tidak ada debtor dalam data upload yang memiliki status REVISION di sistem.`);
+        error.statusCode = 404;
+        throw error;
       }
 
-      // Store for later use in transaction
-      revisionNomorPeserta = uploadedNomorPesertas.join(', ');  // For logging
+      // Filter the debtors array to only those with REVISION status
+      // This silently ignores debtors that are not marked for revision
+      const filteredDebtors = debtors.filter((d) => {
+        const nomorPeserta = String(d?.nomor_peserta || '').trim();
+        return revisionDebtorMap.has(nomorPeserta);
+      });
+
+      // Use filtered debtors for the transaction by removing non-revision debtors
+      // We'll reconstruct the debtors array to include only those being revised
+      while (debtors.length > 0) {
+        debtors.pop();
+      }
+      filteredDebtors.forEach((d) => debtors.push(d));
+
+      // Store for logging
+      revisionNomorPeserta = revisionableNomorPesertas.join(', ');
 
       // PRE-CALCULATE NEXT VERSION NUMBERS FOR EACH nomor_peserta
       // Query both Debtor and DebtorRevise tables to find max version
       nextVersionMap = new Map();
 
-      for (const nomorPeserta of uploadedNomorPesertas) {
+      for (const nomorPeserta of revisionableNomorPesertas) {
         // Find max version from Debtor table (current records)
         const debtorVersions = await prisma.debtor.findMany({
           where: { nomor_peserta: nomorPeserta },
