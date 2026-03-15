@@ -575,6 +575,187 @@ export default class EntityService {
     return record;
   }
 
+  /**
+   * Detect duplicates within a set of normalized debtor rows
+   * Returns array of duplicate groups { field, value, rowIndices }
+   */
+  detectFileDuplicates(rows = []) {
+    const fileDuplicates = [];
+    const seenByNomorPeserta = {};
+    const seenByPolicyNo = {};
+
+    rows.forEach((row, idx) => {
+      const np = row.nomor_peserta
+        ? String(row.nomor_peserta).trim()
+        : null;
+      const pn = row.policy_no
+        ? String(row.policy_no).trim()
+        : null;
+
+      // Track nomor_peserta
+      if (np) {
+        if (seenByNomorPeserta[np]) {
+          seenByNomorPeserta[np].push(idx);
+        } else {
+          seenByNomorPeserta[np] = [idx];
+        }
+      }
+
+      // Track policy_no (can be null)
+      if (pn) {
+        if (seenByPolicyNo[pn]) {
+          seenByPolicyNo[pn].push(idx);
+        } else {
+          seenByPolicyNo[pn] = [idx];
+        }
+      }
+    });
+
+    // Build duplicates array (only groups with 2+ rows)
+    Object.entries(seenByNomorPeserta).forEach(([value, indices]) => {
+      if (indices.length > 1) {
+        fileDuplicates.push({
+          field: 'nomor_peserta',
+          value,
+          rowIndices: indices,
+        });
+      }
+    });
+
+    Object.entries(seenByPolicyNo).forEach(([value, indices]) => {
+      if (indices.length > 1) {
+        fileDuplicates.push({
+          field: 'policy_no',
+          value,
+          rowIndices: indices,
+        });
+      }
+    });
+
+    return fileDuplicates;
+  }
+
+  /**
+   * Check if any nomor_peserta or policy_no values already exist in database
+   * Returns array of database conflicts { field, rowIndex, value, existingRecord }
+   */
+  async checkDatabaseDuplicates(rows = []) {
+    const databaseDuplicates = [];
+
+    // Extract unique values to check
+    const nomorPesertaValues = [];
+    const policyNoValues = [];
+
+    const rowMap = {}; // Maps nomor_peserta/policy_no to row indices
+
+    rows.forEach((row, idx) => {
+      const np = row.nomor_peserta
+        ? String(row.nomor_peserta).trim()
+        : null;
+      const pn = row.policy_no
+        ? String(row.policy_no).trim()
+        : null;
+
+      if (np) {
+        nomorPesertaValues.push(np);
+        if (!rowMap[`np:${np}`]) {
+          rowMap[`np:${np}`] = [];
+        }
+        rowMap[`np:${np}`].push(idx);
+      }
+
+      if (pn) {
+        policyNoValues.push(pn);
+        if (!rowMap[`pn:${pn}`]) {
+          rowMap[`pn:${pn}`] = [];
+        }
+        rowMap[`pn:${pn}`].push(idx);
+      }
+    });
+
+    if (nomorPesertaValues.length === 0 && policyNoValues.length === 0) {
+      return databaseDuplicates;
+    }
+
+    // Query database for existing records
+    const existingRecords = await prisma.debtor.findMany({
+      where: {
+        OR: [
+          nomorPesertaValues.length > 0
+            ? { nomor_peserta: { in: nomorPesertaValues } }
+            : { nomor_peserta: null }, // Match nothing if no values
+          policyNoValues.length > 0
+            ? { policy_no: { in: policyNoValues } }
+            : { policy_no: null }, // Match nothing if no values
+        ],
+      },
+      select: {
+        id: true,
+        nomor_peserta: true,
+        policy_no: true,
+        status: true,
+        version_no: true,
+        batch_id: true,
+      },
+    });
+
+    // Build conflicts array
+    rows.forEach((row, rowIdx) => {
+      const np = row.nomor_peserta
+        ? String(row.nomor_peserta).trim()
+        : null;
+      const pn = row.policy_no
+        ? String(row.policy_no).trim()
+        : null;
+
+      // Check for nomor_peserta match
+      if (np) {
+        const existingByNP = existingRecords.find(
+          (r) => r.nomor_peserta === np
+        );
+        if (existingByNP) {
+          databaseDuplicates.push({
+            field: 'nomor_peserta',
+            rowIndex: rowIdx,
+            value: np,
+            existingRecord: existingByNP,
+          });
+        }
+      }
+
+      // Check for policy_no match (only if policy_no is not null)
+      if (pn) {
+        const existingByPN = existingRecords.find(
+          (r) => r.policy_no === pn
+        );
+        if (existingByPN) {
+          databaseDuplicates.push({
+            field: 'policy_no',
+            rowIndex: rowIdx,
+            value: pn,
+            existingRecord: existingByPN,
+          });
+        }
+      }
+    });
+
+    return databaseDuplicates;
+  }
+
+  /**
+   * Check for both file-level and database-level duplicates
+   * Used during preview generation to detect conflicts before upload
+   */
+  async checkUploadDuplicates(rows = []) {
+    const fileDuplicates = this.detectFileDuplicates(rows);
+    const databaseDuplicates = await this.checkDatabaseDuplicates(rows);
+
+    return {
+      fileDuplicates,
+      databaseDuplicates,
+    };
+  }
+
   async uploadDebtorsAtomic(payload = {}, context = {}) {
     const debtors = Array.isArray(payload.debtors) ? payload.debtors : [];
     const uploadMode = String(payload.uploadMode || 'new').toLowerCase();

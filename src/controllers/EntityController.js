@@ -129,6 +129,27 @@ export default class EntityController {
     }
   }
 
+  async checkUploadDuplicates(request, reply) {
+    try {
+      const debtors = Array.isArray(request.body?.debtors)
+        ? request.body.debtors
+        : [];
+
+      if (debtors.length === 0) {
+        return sendError(
+          reply,
+          new Error('No debtors provided for duplicate check'),
+          400
+        );
+      }
+
+      const result = await this.entityService.checkUploadDuplicates(debtors);
+      return sendSuccess(reply, result, 'Duplicate check completed');
+    } catch (error) {
+      return sendError(reply, error, error.statusCode || 500);
+    }
+  }
+
   async processMasterContractApproval(request, reply) {
     try {
       const result = await this.entityService.processMasterContractApprovalAtomic(

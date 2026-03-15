@@ -38,6 +38,12 @@ export default async function (fastify) {
   );
 
   fastify.post(
+    '/apps/:appId/debtors/check-duplicates',
+    { preHandler: fastify.authenticate },
+    controller.checkUploadDuplicates.bind(controller)
+  );
+
+  fastify.post(
     '/apps/:appId/master-contracts/:contractId/approval',
     { preHandler: fastify.authenticate },
     controller.processMasterContractApproval.bind(controller)
