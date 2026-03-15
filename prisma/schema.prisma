@@ -434,6 +434,8 @@ model Nota {
   confirmed_date      DateTime?
   paid_date           DateTime?
   payment_reference   String?
+  marked_paid_by      String?
+  marked_paid_date    DateTime?
   total_actual_paid   Decimal @default(0) @db.Decimal(25, 2)
   reconciliation_status String @default("PENDING")
   is_immutable        Boolean @default(false)

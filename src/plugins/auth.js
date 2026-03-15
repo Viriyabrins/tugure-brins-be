@@ -58,12 +58,18 @@ export default fp(async (fastify) => {
     // 2. Try decoding as a Keycloak JWT
     const payload = decodeJwtPayload(token);
     if (payload && payload.sub) {
+      const realmRoles = payload.realm_access?.roles || [];
+      const resourceMap = payload.resource_access || {};
+      const resourceRoles = Object.values(resourceMap).flatMap(r => r.roles || []);
+      const allRoles = [...realmRoles, ...resourceRoles];
+
       request.user = {
         id: payload.sub,
         full_name: payload.name || '',
         email: payload.email || '',
         preferredUsername: payload.preferred_username || payload.email || '',
         role: 'USER',
+        application_roles: allRoles,
         token,
       };
       return;
