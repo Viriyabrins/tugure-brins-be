@@ -628,6 +628,11 @@ export class EntityRepository {
       return r ? { id: r.id, ...r } : null;
     }
 
+    if (prisma.subrogation && entity === 'Subrogation') {
+      const r = await prisma.subrogation.findUnique({ where: { subrogation_id: id } });
+      return r ? { id: r.subrogation_id, ...r } : null;
+    }
+
     if (!prisma.entityRecord || !prisma.entityRecord.findUnique) return null;
 
     const record = await prisma.entityRecord.findUnique({ where: { id } });
@@ -820,6 +825,16 @@ export class EntityRepository {
       }
     }
 
+    if (entity === 'Subrogation' && prisma.subrogation?.create) {
+      try {
+        const r = await prisma.subrogation.create({ data: payload });
+        return { id: r.subrogation_id, ...r };
+      } catch (error) {
+        console.error('Subrogation creation error:', error);
+        throw error;
+      }
+    }
+
     throw Object.assign(new Error('Create not supported for this entity in current schema'), { statusCode: 500 });
   }
 
@@ -974,6 +989,13 @@ export class EntityRepository {
         data
       });
       return { id: r.id, ...r };
+    }
+
+    if (entity === 'Subrogation' && prisma.subrogation?.update) {
+      const existing = await prisma.subrogation.findUnique({ where: { subrogation_id: id } });
+      if (!existing) return null;
+      const r = await prisma.subrogation.update({ where: { subrogation_id: id }, data: payload });
+      return { id: r.subrogation_id, ...r };
     }
 
     return null;
