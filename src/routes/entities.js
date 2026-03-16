@@ -73,4 +73,19 @@ export default async function (fastify) {
     { preHandler: fastify.authenticate },
     controller.delete.bind(controller)
   );
+
+  /**
+   * Bulk debtor action endpoints
+   */
+  fastify.post(
+    '/apps/:appId/bulk-debtor-action',
+    { preHandler: fastify.authenticate },
+    controller.startBulkDebtorAction.bind(controller)
+  );
+
+  fastify.get(
+    '/apps/:appId/debtor-jobs/:jobId',
+    { preHandler: fastify.authenticate },
+    controller.getDebtorJobStatus.bind(controller)
+  );
 }
