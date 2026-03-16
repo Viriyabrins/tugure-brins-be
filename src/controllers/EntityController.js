@@ -3,6 +3,9 @@ import { paginate, paginationResponse } from '../utils/pagination.js';
 import * as jobQueue from '../utils/jobQueue.js';
 import * as DebtorService from '../services/DebtorService.js';
 import prisma from '../prisma/client.js';
+import { NotificationRepository } from '../repositories/NotificationRepository.js';
+
+const ALL_ROLES = ['maker-brins-role', 'checker-brins-role', 'approver-brins-role', 'checker-tugure-role', 'approver-tugure-role'];
 
 export default class EntityController {
   constructor({ entityService }) {
@@ -296,14 +299,14 @@ async function processBulkDebtorActionBackground(jobId, action, queryFilters, re
 
       let result;
       if (action === 'check') {
-        result = await DebtorService.processDebtorCheck(debtor.id, auditActor);
+        result = await DebtorService.processDebtorCheck(debtor.id, auditActor, { emitNotification: false });
       } else if (action === 'approve') {
-        result = await DebtorService.processDebtorApproval(debtor.id, remarks, auditActor, debtor.contract_id);
+        result = await DebtorService.processDebtorApproval(debtor.id, remarks, auditActor, debtor.contract_id, { emitNotification: false });
         if (result.success) {
           totalNetPremi += parseFloat(debtor.net_premi) || 0;
         }
       } else if (action === 'revision') {
-        result = await DebtorService.processDebtorRevision(debtor.id, remarks, auditActor);
+        result = await DebtorService.processDebtorRevision(debtor.id, remarks, auditActor, { emitNotification: false });
       }
 
       if (result.success) {
@@ -318,22 +321,45 @@ async function processBulkDebtorActionBackground(jobId, action, queryFilters, re
       }
     }
 
-    // Create Nota if action is approve and debtors were successfully processed
-    if (action === 'approve' && processedCount > 0 && batchId && contractId) {
+    // Fallback: if contractId wasn't provided, try to fetch it from the Batch table
+    let actualContractId = contractId;
+    let batchRecord = null;
+    if (batchId) {
       try {
-        const notaNumber = `NOTA-${contractId}-${Date.now()}`;
+        batchRecord = await prisma.batch.findUnique({
+          where: { batch_id: batchId },
+        });
+        if (!actualContractId && batchRecord && batchRecord.contract_id) {
+          actualContractId = batchRecord.contract_id;
+        }
+      } catch (err) {
+        console.warn(`Failed to fetch batch ${batchId}:`, err);
+      }
+    }
+
+    // Create Nota if action is approve and debtors were successfully processed
+    if (action === 'approve' && processedCount > 0 && batchId && actualContractId) {
+      try {
+        const notaNumber = `NOTA-${actualContractId}-${Date.now()}`;
         // Check if nota already exists for this batch
         const existingNota = await prisma.nota.findFirst({
           where: { reference_id: batchId },
         });
 
         if (!existingNota) {
+          // Read aggregate values from the Batch (populated during debtor upload)
+          const notaPremium = parseFloat(batchRecord?.premium) || 0;
+          const notaCommission = parseFloat(batchRecord?.commission) || 0;
+          const notaClaim = parseFloat(batchRecord?.claim) || 0;
+          const notaTotal = parseFloat(batchRecord?.total) || 0;
+          const notaNetDue = parseFloat(batchRecord?.net_due) || 0;
+
           await prisma.nota.create({
             data: {
               nota_number: notaNumber,
               nota_type: 'Batch',
               reference_id: batchId,
-              contract_id: contractId,
+              contract_id: actualContractId,
               amount: totalNetPremi,
               currency: 'IDR',
               status: 'UNPAID',
@@ -341,6 +367,11 @@ async function processBulkDebtorActionBackground(jobId, action, queryFilters, re
               issued_date: new Date(),
               total_actual_paid: 0,
               reconciliation_status: 'PENDING',
+              premium: notaPremium,
+              commission: notaCommission,
+              claim: notaClaim,
+              total: notaTotal,
+              net_due: notaNetDue,
             },
           });
           console.log(`Nota created: ${notaNumber} for batch ${batchId}`);
@@ -349,6 +380,27 @@ async function processBulkDebtorActionBackground(jobId, action, queryFilters, re
         }
       } catch (notaError) {
         console.warn(`Failed to create Nota for batch ${batchId}:`, notaError);
+      }
+    }
+
+    // Create batch-level notification (one per role) when job finishes and batchId is provided
+    if (processedCount > 0 && batchId) {
+      try {
+        const notifRepo = new NotificationRepository();
+        const notifTitle = `Bulk ${action} completed for batch ${batchId}`;
+        const notifMessage = `Bulk ${action} completed: ${processedCount} succeeded, ${failedCount} failed.`;
+        for (const role of ALL_ROLES) {
+          await notifRepo.create({
+            title: notifTitle,
+            message: notifMessage,
+            type: 'INFO',
+            module: 'DEBTOR',
+            reference_id: batchId,
+            target_role: role,
+          });
+        }
+      } catch (notifErr) {
+        console.warn(`Failed to create batch notification for job ${jobId}:`, notifErr);
       }
     }
 

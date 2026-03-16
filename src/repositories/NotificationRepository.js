@@ -35,6 +35,25 @@ export class NotificationRepository {
       reference_id = null,
       target_role = 'ALL'
     } = payload;
+    // Prevent simple duplicate notifications: if a notification with same
+    // reference_id, target_role, module and title already exists, return it
+    // instead of creating a new one. This provides basic idempotency for
+    // batch flows without requiring DB unique constraints.
+    try {
+      const existing = await prisma.notification.findFirst({
+        where: {
+          reference_id,
+          target_role,
+          module,
+          title,
+        }
+      });
+
+      if (existing) return existing;
+    } catch (e) {
+      // If the findFirst check fails for any reason, fall back to create
+      console.warn('NotificationRepository.create: dedupe check failed, proceeding to create', e);
+    }
 
     return prisma.notification.create({
       data: {

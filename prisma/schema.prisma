@@ -57,7 +57,13 @@ model Batch {
   paid_date               DateTime?
   closed_by               String?
   closed_date             DateTime?
-  revision_reason        String?
+  revision_reason         String?
+  premium                 Decimal? @db.Decimal(25, 2)
+  commission              Decimal? @db.Decimal(25, 2)
+  claim                   Decimal? @db.Decimal(25, 2)
+  total                   Decimal? @db.Decimal(25, 2)
+  net_due                 Decimal? @db.Decimal(25, 2)
+  debtors                 Debtor[]
   @@map("batch")
 }
 
@@ -208,6 +214,7 @@ model Debtor {
   revision_reason         String?
   validation_remarks      String?
   parent_debtor_id        String?  // Reference to prior version (for revision tracking)
+  batch                   Batch    @relation(fields: [batch_id], references: [batch_id])
 
   @@map("debtor")
 }
@@ -439,6 +446,11 @@ model Nota {
   total_actual_paid   Decimal @default(0) @db.Decimal(25, 2)
   reconciliation_status String @default("PENDING")
   is_immutable        Boolean @default(false)
+  premium             Decimal? @db.Decimal(25, 2)
+  commission          Decimal? @db.Decimal(25, 2)
+  claim               Decimal? @db.Decimal(25, 2)
+  total               Decimal? @db.Decimal(25, 2)
+  net_due             Decimal? @db.Decimal(25, 2)
   @@map("nota")
 }
 

@@ -1033,6 +1033,43 @@ export default class EntityService {
           }
         }
 
+        // Aggregate premium values and update the Batch
+        if (createdDebtors.length > 0) {
+          let batchPremium = 0;
+          let batchCommission = 0;
+          for (const d of createdDebtors) {
+            batchPremium += parseFloat(d.premium_amount) || 0;
+            batchCommission += parseFloat(d.ric_amount) || 0;
+          }
+          const batchTotal = batchPremium - batchCommission;
+          const batchClaim = 0;
+          const batchNetDue = batchTotal - batchClaim;
+
+          // Group created debtors by batch_id to update each batch
+          const batchIds = [...new Set(createdDebtors.map((d) => d.batch_id).filter(Boolean))];
+          for (const bid of batchIds) {
+            const batchDebtors = createdDebtors.filter((d) => d.batch_id === bid);
+            let bp = 0;
+            let bc = 0;
+            for (const d of batchDebtors) {
+              bp += parseFloat(d.premium_amount) || 0;
+              bc += parseFloat(d.ric_amount) || 0;
+            }
+            const bt = bp - bc;
+            const bnd = bt - 0; // claim = 0
+            await tx.batch.update({
+              where: { batch_id: bid },
+              data: {
+                premium: bp,
+                commission: bc,
+                claim: 0,
+                total: bt,
+                net_due: bnd,
+              },
+            });
+          }
+        }
+
         // Create audit log
         await tx.auditLog.create({
           data: {
