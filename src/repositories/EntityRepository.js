@@ -198,11 +198,27 @@ export class EntityRepository {
     };
   }
 
-  async list(entity, { limit = 100, sort = 'desc', offset = 0, page = 1, filters = {} } = {}) {
+  async list(entity, { limit = 100, sort = 'desc', sortBy = null, sortOrder = null, offset = 0, page = 1, filters = {} } = {}) {
     ensureEntity(entity);
-    const direction = sort === 'asc' ? 'asc' : 'desc';
+    
+    // Determine sort direction: prefer sortOrder from API, fall back to legacy sort param
+    let direction = 'desc';
+    if (sortOrder === 'asc' || sortOrder === 'desc') {
+      direction = sortOrder;
+    } else if (sort === 'asc') {
+      direction = 'asc';
+    }
+    
     // When limit > 0, apply skip/take for pagination. When limit === 0, return all records.
     const paginationOpts = limit > 0 ? { skip: offset, take: limit } : {};
+
+    // Helper to build orderBy object based on sortBy field
+    const buildOrderBy = (field) => {
+      if (!field) return { id: direction };
+      // Sanitize sortBy input to prevent injection
+      const sanitized = String(field).trim().replace(/[^a-zA-Z0-9_]/g, '');
+      return { [sanitized]: direction };
+    };
 
     // Prefer dedicated tables when available (Debtor, Claim, Bordero), otherwise fall back
     // to the generic `entityRecord` table if present.
@@ -267,13 +283,13 @@ export class EntityRepository {
         }
       }
       const total = await prisma.debtor.count({ where });
-      const rows = await prisma.debtor.findMany({ where, ...paginationOpts, orderBy: { id: direction } });
+      const rows = await prisma.debtor.findMany({ where, ...paginationOpts, orderBy: buildOrderBy(sortBy) });
       return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 
     if (prisma.batch && entity === 'Batch') {
       const total = await prisma.batch.count();
-      const rows = await prisma.batch.findMany({ ...paginationOpts, orderBy: { batch_id: direction } });
+      const rows = await prisma.batch.findMany({ ...paginationOpts, orderBy: buildOrderBy(sortBy || 'batch_id') });
       return { data: rows.map((r) => ({ id: r.batch_id, ...r })), total };
     }
 
@@ -303,19 +319,19 @@ export class EntityRepository {
       }
 
       const total = await prisma.claim.count({ where });
-      const rows = await prisma.claim.findMany({ where, ...paginationOpts, orderBy: { claim_no: direction } });
+      const rows = await prisma.claim.findMany({ where, ...paginationOpts, orderBy: buildOrderBy(sortBy || 'claim_no') });
       return { data: rows.map((r) => ({ id: r.claim_no, ...r })), total };
     }
 
     if (prisma.bordero && entity === 'Bordero') {
       const total = await prisma.bordero.count();
-      const rows = await prisma.bordero.findMany({ ...paginationOpts, orderBy: { bordero_id: direction } });
+      const rows = await prisma.bordero.findMany({ ...paginationOpts, orderBy: buildOrderBy(sortBy || 'bordero_id') });
       return { data: rows.map((r) => ({ id: r.bordero_id, ...r })), total };
     }
 
     if (prisma.subrogation && entity === 'Subrogation') {
       const total = await prisma.subrogation.count();
-      const rows = await prisma.subrogation.findMany({ ...paginationOpts, orderBy: { subrogation_id: direction } });
+      const rows = await prisma.subrogation.findMany({ ...paginationOpts, orderBy: buildOrderBy(sortBy || 'subrogation_id') });
       return { data: rows.map((r) => ({ id: r.subrogation_id, ...r })), total };
     }
 
@@ -364,7 +380,7 @@ export class EntityRepository {
       }
 
       const total = await prisma.masterContract.count({ where });
-      const rows = await prisma.masterContract.findMany({ where, ...paginationOpts, orderBy: { contract_id: direction } });
+      const rows = await prisma.masterContract.findMany({ where, ...paginationOpts, orderBy: buildOrderBy(sortBy || 'contract_id') });
       return { data: rows.map((r) => ({ id: r.contract_id, ...r })), total };
     }
 
@@ -453,13 +469,13 @@ export class EntityRepository {
 
     if (prisma.paymentIntent && entity === 'PaymentIntent') {
       const total = await prisma.paymentIntent.count();
-      const rows = await prisma.paymentIntent.findMany({ ...paginationOpts, orderBy: { intent_id: direction } });
+      const rows = await prisma.paymentIntent.findMany({ ...paginationOpts, orderBy: buildOrderBy(sortBy || 'intent_id') });
       return { data: rows.map((r) => ({ id: r.intent_id, ...r })), total };
     }
 
     if (prisma.notification && entity === 'Notification') {
       const total = await prisma.notification.count();
-      const rows = await prisma.notification.findMany({ ...paginationOpts, orderBy: { id: direction } });
+      const rows = await prisma.notification.findMany({ ...paginationOpts, orderBy: buildOrderBy(sortBy || 'id') });
       return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 
@@ -471,13 +487,13 @@ export class EntityRepository {
         }
       }
       const total = await prisma.emailTemplate.count({ where });
-      const rows = await prisma.emailTemplate.findMany({ where, ...paginationOpts, orderBy: { id: direction } });
+      const rows = await prisma.emailTemplate.findMany({ where, ...paginationOpts, orderBy: buildOrderBy(sortBy || 'id') });
       return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 
     if (prisma.SystemConfig && entity === 'SystemConfig') {
       const total = await prisma.SystemConfig.count();
-      const rows = await prisma.SystemConfig.findMany({ ...paginationOpts, orderBy: { id: direction } });
+      const rows = await prisma.SystemConfig.findMany({ ...paginationOpts, orderBy: buildOrderBy(sortBy || 'id') });
       return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 
@@ -503,19 +519,19 @@ export class EntityRepository {
         }
       }
       const total = await prisma.SlaRule.count({ where });
-      const rows = await prisma.SlaRule.findMany({ where, ...paginationOpts, orderBy: { id: direction } });
+      const rows = await prisma.SlaRule.findMany({ where, ...paginationOpts, orderBy: buildOrderBy(sortBy || 'id') });
       return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 
     if (prisma.auditLog && entity === 'AuditLog') {
       const total = await prisma.auditLog.count();
-      const rows = await prisma.auditLog.findMany({ ...paginationOpts, orderBy: { id: direction } });
+      const rows = await prisma.auditLog.findMany({ ...paginationOpts, orderBy: buildOrderBy(sortBy || 'id') });
       return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 
     if (prisma.nota && entity === 'Nota') {
       const total = await prisma.nota.count();
-      const rows = await prisma.nota.findMany({ ...paginationOpts, orderBy: { nota_number: direction } });
+      const rows = await prisma.nota.findMany({ ...paginationOpts, orderBy: buildOrderBy(sortBy || 'nota_number') });
       return { data: rows.map((r) => ({ id: r.nota_number, ...r })), total };
     }
 
@@ -550,7 +566,7 @@ export class EntityRepository {
       }
 
       const total = await prisma.reviseLog.count({ where });
-      const rows = await prisma.reviseLog.findMany({ where, ...paginationOpts, orderBy: { created_at: direction } });
+      const rows = await prisma.reviseLog.findMany({ where, ...paginationOpts, orderBy: buildOrderBy(sortBy || 'created_at') });
       return { data: rows.map((r) => ({ id: r.id, ...r })), total };
     }
 

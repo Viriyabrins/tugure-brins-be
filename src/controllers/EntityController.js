@@ -26,7 +26,15 @@ export default class EntityController {
         }
       }
 
-      const params = { sort: request.query.sort, limit, offset, page, filters: parsedFilters };
+      const params = { 
+        sort: request.query.sort, 
+        sortBy: request.query.sortBy,
+        sortOrder: request.query.sortOrder,
+        limit, 
+        offset, 
+        page, 
+        filters: parsedFilters 
+      };
       const items = await this.entityService.list(request.params.entityName, params);
 
       // If repository returned pagination metadata, wrap with paginationResponse
