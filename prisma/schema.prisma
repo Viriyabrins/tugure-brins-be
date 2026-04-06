@@ -321,6 +321,7 @@ model MasterContract {
   underwriter_name           String?
   input_date                 DateTime?
   input_status               String?    // Baru, Active, dll
+  status_approval            String?    // Submitted, APPROVED, dll
   contract_status            String     @default("Draft") // Active, Draft, Expired, dll
 
   // === Pihak Terkait ===
