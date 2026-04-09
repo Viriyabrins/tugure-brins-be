@@ -434,57 +434,43 @@ async function processBulkDebtorActionBackground(jobId, action, queryFilters, re
     // Create Nota if action is approve and debtors were successfully processed
     if (action === 'approve' && processedCount > 0 && batchId && actualContractId) {
       try {
-        // Ensure all debtors in the batch are APPROVED_BRINS before creating nota
-        const notApprovedCount = await prisma.debtor.count({
-          where: {
-            batch_id: batchId,
-            NOT: {
-              status: 'APPROVED_BRINS',
-            },
-          },
+        const notaNumber = `NOTA-${actualContractId}-${Date.now()}`;
+        // Check if nota already exists for this batch
+        const existingNota = await prisma.nota.findFirst({
+          where: { reference_id: batchId },
         });
 
-        if (notApprovedCount > 0) {
-          console.log(`Batch ${batchId} has ${notApprovedCount} debtor(s) not approved by BRINS. Skipping nota creation.`);
-        } else {
-          const notaNumber = `NOTA-${actualContractId}-${Date.now()}`;
-          // Check if nota already exists for this batch
-          const existingNota = await prisma.nota.findFirst({
-            where: { reference_id: batchId },
+        if (!existingNota) {
+          // Read aggregate values from the Batch (populated during debtor upload)
+          const notaPremium = parseFloat(batchRecord?.premium) || 0;
+          const notaCommission = parseFloat(batchRecord?.commission) || 0;
+          const notaClaim = parseFloat(batchRecord?.claim) || 0;
+          const notaTotal = parseFloat(batchRecord?.total) || 0;
+          const notaNetDue = parseFloat(batchRecord?.net_due) || 0;
+
+          await prisma.nota.create({
+            data: {
+              nota_number: notaNumber,
+              nota_type: 'Batch',
+              reference_id: batchId,
+              contract_id: actualContractId,
+              amount: totalNetPremi,
+              currency: 'IDR',
+              status: 'UNPAID',
+              issued_by: auditActor.user_email || 'system',
+              issued_date: new Date(),
+              total_actual_paid: 0,
+              reconciliation_status: 'PENDING',
+              premium: notaPremium,
+              commission: notaCommission,
+              claim: notaClaim,
+              total: notaTotal,
+              net_due: notaNetDue,
+            },
           });
-
-          if (!existingNota) {
-            // Read aggregate values from the Batch (populated during debtor upload)
-            const notaPremium = parseFloat(batchRecord?.premium) || 0;
-            const notaCommission = parseFloat(batchRecord?.commission) || 0;
-            const notaClaim = parseFloat(batchRecord?.claim) || 0;
-            const notaTotal = parseFloat(batchRecord?.total) || 0;
-            const notaNetDue = parseFloat(batchRecord?.net_due) || 0;
-
-            await prisma.nota.create({
-              data: {
-                nota_number: notaNumber,
-                nota_type: 'Batch',
-                reference_id: batchId,
-                contract_id: actualContractId,
-                amount: totalNetPremi,
-                currency: 'IDR',
-                status: 'UNPAID',
-                issued_by: auditActor.user_email || 'system',
-                issued_date: new Date(),
-                total_actual_paid: 0,
-                reconciliation_status: 'PENDING',
-                premium: notaPremium,
-                commission: notaCommission,
-                claim: notaClaim,
-                total: notaTotal,
-                net_due: notaNetDue,
-              },
-            });
-            console.log(`Nota created: ${notaNumber} for batch ${batchId}`);
-          } else {
-            console.log(`Nota already exists for batch ${batchId}, skipping creation`);
-          }
+          console.log(`Nota created: ${notaNumber} for batch ${batchId}`);
+        } else {
+          console.log(`Nota already exists for batch ${batchId}, skipping creation`);
         }
       } catch (notaError) {
         console.warn(`Failed to create Nota for batch ${batchId}:`, notaError);

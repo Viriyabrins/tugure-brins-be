@@ -226,7 +226,8 @@ export class EntityRepository {
       const where = {};
       if (filters) {
         if (filters.contract && filters.contract !== 'all') where.contract_id = filters.contract;
-        if (filters.batch) where.batch_id = { contains: filters.batch };
+        if (filters.batch_id) where.batch_id = filters.batch_id; // exact match for programmatic use
+        if (filters.batch) where.batch_id = { contains: filters.batch }; // partial match for search UI
         if (filters.bordero_id) where.bordero_id = filters.bordero_id;
         // Debtor model uses `status` for underwriting status
         if (filters.submitStatus && filters.submitStatus !== 'all') where.status = filters.submitStatus;
