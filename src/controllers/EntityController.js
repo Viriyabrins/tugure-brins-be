@@ -102,6 +102,92 @@ export default class EntityController {
     }
   }
 
+  async validateMasterContracts(request, reply) {
+    try {
+      const rows = Array.isArray(request.body?.rows) ? request.body.rows : [];
+      if (rows.length === 0) {
+        return sendError(reply, new Error('No data rows were submitted for validation.'), 400);
+      }
+      const result = this.entityService.validateMasterContractRawRows(rows);
+      if (!result.valid) {
+        const summary = result.errors
+          .slice(0, 20)
+          .map((e) => `Row ${e.row} – "${e.field}": value "${e.value}" is not a valid ${e.expected}`)
+          .join('\n');
+        const more = result.errors.length > 20 ? `\n... and ${result.errors.length - 20} more error(s).` : '';
+        const error = new Error(`Validation failed. ${result.errors.length} error(s) found:\n${summary}${more}`);
+        error.statusCode = 422;
+        return sendError(reply, error, 422);
+      }
+      return sendSuccess(reply, { valid: true, rowCount: rows.length }, 'Validation successful.');
+    } catch (error) {
+      return sendError(reply, error, error.statusCode || 500);
+    }
+  }
+
+  async validateDebtors(request, reply) {
+    try {
+      const rows = Array.isArray(request.body?.rows) ? request.body.rows : [];
+      if (rows.length === 0) {
+        return sendError(reply, new Error('No data rows were submitted for validation.'), 400);
+      }
+      const result = this.entityService.validateDebtorRawRows(rows);
+      if (!result.valid) {
+        const summary = result.errors
+          .slice(0, 20)
+          .map((e) => `Row ${e.row} – "${e.field}": value "${e.value}" is not a valid ${e.expected}`)
+          .join('\n');
+        const more = result.errors.length > 20 ? `\n... and ${result.errors.length - 20} more error(s).` : '';
+        const error = new Error(`Validation failed. ${result.errors.length} error(s) found:\n${summary}${more}`);
+        error.statusCode = 422;
+        return sendError(reply, error, 422);
+      }
+      return sendSuccess(reply, { valid: true, rowCount: rows.length }, 'Validation successful.');
+    } catch (error) {
+      return sendError(reply, error, error.statusCode || 500);
+    }
+  }
+
+  async validateClaims(request, reply) {
+    try {
+      const rows = Array.isArray(request.body?.rows) ? request.body.rows : [];
+      if (rows.length === 0) {
+        return sendError(reply, new Error('No data rows were submitted for validation.'), 400);
+      }
+      const result = this.entityService.validateClaimRows(rows);
+      if (!result.valid) {
+        const summary = result.errors
+          .slice(0, 20)
+          .map((e) => `Row ${e.row} – "${e.field}": value "${e.value}" is not a valid ${e.expected}`)
+          .join('\n');
+        const more = result.errors.length > 20 ? `\n... and ${result.errors.length - 20} more error(s).` : '';
+        const error = new Error(`Validation failed. ${result.errors.length} error(s) found:\n${summary}${more}`);
+        error.statusCode = 422;
+        return sendError(reply, error, 422);
+      }
+      return sendSuccess(reply, { valid: true, rowCount: rows.length }, 'Validation successful.');
+    } catch (error) {
+      return sendError(reply, error, error.statusCode || 500);
+    }
+  }
+
+  async validateSubrogation(request, reply) {
+    try {
+      const result = this.entityService.validateSubrogationPayload(request.body || {});
+      if (!result.valid) {
+        const summary = result.errors
+          .map((e) => `"${e.field}": value "${e.value}" is not a valid ${e.expected}`)
+          .join('\n');
+        const error = new Error(`Subrogation validation failed:\n${summary}`);
+        error.statusCode = 422;
+        return sendError(reply, error, 422);
+      }
+      return sendSuccess(reply, { valid: true }, 'Validation successful.');
+    } catch (error) {
+      return sendError(reply, error, error.statusCode || 500);
+    }
+  }
+
   async uploadMasterContracts(request, reply) {
     try {
       const isReviseMode = String(request.body?.uploadMode || '').toLowerCase() === 'revise';

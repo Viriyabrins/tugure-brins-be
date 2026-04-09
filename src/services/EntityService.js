@@ -109,19 +109,19 @@ export default class EntityService {
       const target = Array.isArray(error.meta?.target)
         ? error.meta.target.join(', ')
         : String(error.meta?.target || 'unique field');
-      const e = new Error(`Data sudah ada. Nilai pada ${target} harus unik.`);
+      const e = new Error(`Duplicate data. The value on ${target} must be unique.`);
       e.statusCode = 409;
       return e;
     }
 
     if (error.code === 'P2003') {
-      const e = new Error('Data tidak bisa diproses karena relasi referensi tidak valid.');
+      const e = new Error('Data cannot be processed due to an invalid reference relation.');
       e.statusCode = 400;
       return e;
     }
 
     if (error.code === 'P2025') {
-      const e = new Error('Data yang diminta tidak ditemukan atau sudah berubah.');
+      const e = new Error('The requested data was not found or has already been changed.');
       e.statusCode = 404;
       return e;
     }
@@ -136,6 +136,266 @@ export default class EntityService {
     return e;
   }
 
+  /**
+   * Validate raw rows from an uploaded CSV/Excel file for Master Contract.
+   * Each row is a plain object with string values as they come from the file parser.
+   * Returns an object { valid: boolean, errors: Array<{row, field, value, expected}> }.
+   */
+  validateMasterContractRawRows(rows = []) {
+    const REQUIRED_FIELDS = [
+      'underwriter_name', 'input_date', 'input_status', 'contract_status',
+      'source_type', 'source_name', 'ceding_name', 'ceding_same_as_source',
+      'endorsement_type', 'endorsement_reason', 'endorsement_reason_detail',
+      'kind_of_business', 'offer_date', 'contract_no', 'binder_no_tugure',
+      'contract_no_from', 'binder_no_from', 'type_of_contract', 'bank_obligee',
+      'credit_type', 'product_type', 'product_name',
+      'contract_start_date', 'contract_end_date', 'effective_date',
+      'outward_retrocession', 'automatic_cession', 'retro_program',
+      'reporting_participant_days', 'reporting_claim_days', 'claim_reporting_type',
+      'payment_scenario', 'reinsurance_commission_pct',
+      'loss_ratio_value', 'loss_ratio_basis',
+      'max_tenor_value', 'max_tenor_unit', 'max_sum_insured',
+      'limit_coverage_type', 'kolektibilitas_max',
+      'qs_tugure_share',
+    ];
+    const DATE_FIELDS = [
+      'input_date', 'offer_date', 'contract_start_date', 'contract_end_date',
+      'effective_date', 'stnc_date',
+    ];
+    const INT_FIELDS = [
+      'reporting_participant_days', 'reporting_claim_days',
+      'evaluation_period_value', 'max_tenor_value',
+      'reinsurance_commission_pct', 'loss_ratio_value', 'max_sum_insured', 'kolektibilitas_max',
+      'qs_tugure_share', 'qs_cedant_share', 'deductible',
+    ];
+    const DECIMAL_FIELDS = [
+      'profit_commission_pct', 'brokerage_fee_pct',
+      'stop_loss_value', 'cut_loss_value', 'cut_off_value',
+      'kolektibilitas_limit_amount',
+      'share_tugure_percentage',
+    ];
+    const BOOLEAN_FIELDS = ['ceding_same_as_source'];
+
+    const isBlank = (v) => v === undefined || v === null || String(v).trim() === '';
+
+    const parseNum = (v) => {
+      let s = String(v).trim().replace(/\s/g, '');
+      if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+      else if (s.includes(',')) s = s.replace(',', '.');
+      const n = Number(s);
+      return Number.isNaN(n) ? null : n;
+    };
+
+    const BOOLEAN_TRUE = ['true', '1', 'yes', 'y', 'ya'];
+    const BOOLEAN_FALSE = ['false', '0', 'no', 'n', 'tidak'];
+
+    const errors = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] || {};
+      const rowNum = i + 1;
+
+      // Required-field check (empty / null not allowed)
+      for (const field of REQUIRED_FIELDS) {
+        if (isBlank(row[field])) {
+          errors.push({ row: rowNum, field, value: '', expected: 'Required (must not be empty)' });
+        }
+      }
+
+      for (const field of DATE_FIELDS) {
+        const raw = row[field];
+        if (isBlank(raw)) continue;
+        // Accept Excel numeric serial dates (numbers)
+        if (typeof raw === 'number') continue;
+        const d = new Date(String(raw).trim());
+        if (Number.isNaN(d.getTime())) {
+          errors.push({ row: rowNum, field, value: String(raw), expected: 'Date (e.g. YYYY-MM-DD)' });
+        }
+      }
+
+      for (const field of INT_FIELDS) {
+        const raw = row[field];
+        if (isBlank(raw)) continue;
+        const n = parseNum(raw);
+        if (n === null || !Number.isInteger(n)) {
+          errors.push({ row: rowNum, field, value: String(raw), expected: 'Integer' });
+        }
+      }
+
+      for (const field of DECIMAL_FIELDS) {
+        const raw = row[field];
+        if (isBlank(raw)) continue;
+        const n = parseNum(raw);
+        if (n === null) {
+          errors.push({ row: rowNum, field, value: String(raw), expected: 'Number' });
+        }
+      }
+
+      for (const field of BOOLEAN_FIELDS) {
+        const raw = row[field];
+        if (isBlank(raw)) continue;
+        if (typeof raw === 'boolean') continue;
+        const v = String(raw).trim().toLowerCase();
+        if (!BOOLEAN_TRUE.includes(v) && !BOOLEAN_FALSE.includes(v)) {
+          errors.push({ row: rowNum, field, value: String(raw), expected: 'Boolean (true/false/yes/no/1/0)' });
+        }
+      }
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
+
+  /**
+   * Validate raw normalized rows from an uploaded CSV/Excel file for Debtor.
+   * Field names must already be lowercased/alias-resolved (as returned by parseDebtorFile).
+   * Returns { valid: boolean, errors: Array<{row, field, value, expected}> }.
+   */
+  validateDebtorRawRows(rows = []) {
+    const DATE_FIELDS = [
+      'tanggal_mulai_covering', 'tanggal_akhir_covering',
+      'tanggal_terima', 'tanggal_validasi', 'teller_premium_date',
+    ];
+    const INT_FIELDS = ['status_aktif', 'flag_restruk', 'flag_restruktur', 'kolektabilitas'];
+    const DECIMAL_FIELDS = [
+      'plafon', 'nominal_premi', 'premi_percentage',
+      'premium_amount', 'ric_percentage', 'ric_amount',
+      'bf_percentage', 'bf_amount', 'net_premi',
+    ];
+
+    const isBlank = (v) => v === undefined || v === null || String(v).trim() === '';
+
+    const parseNum = (v) => {
+      let s = String(v).trim().replace(/\s/g, '');
+      const lastComma = s.lastIndexOf(',');
+      const lastDot = s.lastIndexOf('.');
+      if (lastComma > -1 && lastDot > -1) {
+        s = lastComma > lastDot ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+      } else if (lastComma > -1) {
+        s = s.replace(',', '.');
+      }
+      const n = Number.parseFloat(s);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const errors = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] || {};
+      const rowNum = i + 1;
+
+      for (const field of DATE_FIELDS) {
+        const raw = row[field];
+        if (isBlank(raw)) continue;
+        if (raw instanceof Date) continue;
+        if (typeof raw === 'number') continue; // Excel serial date
+        const d = new Date(String(raw).trim());
+        if (Number.isNaN(d.getTime())) {
+          errors.push({ row: rowNum, field, value: String(raw), expected: 'Date (e.g. DD/MM/YYYY or YYYY-MM-DD)' });
+        }
+      }
+
+      for (const field of INT_FIELDS) {
+        const raw = row[field];
+        if (isBlank(raw)) continue;
+        if (typeof raw === 'number') { if (!Number.isInteger(raw)) errors.push({ row: rowNum, field, value: String(raw), expected: 'Integer' }); continue; }
+        const n = parseNum(raw);
+        if (n === null || !Number.isInteger(n)) {
+          errors.push({ row: rowNum, field, value: String(raw), expected: 'Integer' });
+        }
+      }
+
+      for (const field of DECIMAL_FIELDS) {
+        const raw = row[field];
+        if (isBlank(raw)) continue;
+        if (typeof raw === 'number') continue;
+        if (parseNum(raw) === null) {
+          errors.push({ row: rowNum, field, value: String(raw), expected: 'Number' });
+        }
+      }
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
+
+  /**
+   * Validate parsed claim rows (as returned by parseClaimFile on the frontend).
+   * Date fields are stored as raw strings/Date objects; numeric fields are already
+   * converted (number or null). Validates date parseability and required numeric fields.
+   * Returns { valid: boolean, errors: Array<{row, field, value, expected}> }.
+   */
+  validateClaimRows(rows = []) {
+    const DATE_FIELDS = ['tanggal_realisasi_kredit', 'dol'];
+    const REQUIRED_NUMERIC = ['nilai_klaim'];
+    const OPTIONAL_NUMERIC = ['plafond', 'max_coverage', 'share_tugure_percentage', 'share_tugure_amount'];
+
+    const isBlank = (v) => v === undefined || v === null || String(v).trim() === '';
+
+    const isValidDate = (v) => {
+      if (v instanceof Date) return !Number.isNaN(v.getTime());
+      if (typeof v === 'number') return true; // Excel serial
+      const d = new Date(String(v).trim());
+      return !Number.isNaN(d.getTime());
+    };
+
+    const errors = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] || {};
+      const rowNum = row.excelRow || i + 2;
+
+      for (const field of DATE_FIELDS) {
+        const raw = row[field];
+        if (isBlank(raw)) continue;
+        if (!isValidDate(raw)) {
+          errors.push({ row: rowNum, field, value: String(raw), expected: 'Date (e.g. YYYY-MM-DD)' });
+        }
+      }
+
+      for (const field of REQUIRED_NUMERIC) {
+        const val = row[field];
+        if (val === null || val === undefined || (typeof val !== 'number') || !Number.isFinite(val)) {
+          errors.push({ row: rowNum, field, value: String(val ?? ''), expected: 'Valid number (required)' });
+        }
+      }
+
+      for (const field of OPTIONAL_NUMERIC) {
+        const val = row[field];
+        if (val === null || val === undefined) continue;
+        if (typeof val !== 'number' || !Number.isFinite(val)) {
+          errors.push({ row: rowNum, field, value: String(val), expected: 'Number' });
+        }
+      }
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
+
+  /**
+   * Validate a subrogation form payload before saving.
+   * Returns { valid: boolean, errors: Array<{field, value, expected}> }.
+   */
+  validateSubrogationPayload(payload = {}) {
+    const errors = [];
+
+    const amt = payload.recoveryAmount;
+    const numAmt = typeof amt === 'number' ? amt : Number(String(amt ?? '').replace(/[^0-9.-]/g, ''));
+    if (!Number.isFinite(numAmt) || numAmt <= 0) {
+      errors.push({ field: 'recoveryAmount', value: String(amt ?? ''), expected: 'Positive number' });
+    }
+
+    const dt = payload.recoveryDate;
+    if (!dt || String(dt).trim() === '') {
+      errors.push({ field: 'recoveryDate', value: '', expected: 'Date (YYYY-MM-DD)' });
+    } else {
+      const d = new Date(String(dt).trim());
+      if (Number.isNaN(d.getTime())) {
+        errors.push({ field: 'recoveryDate', value: String(dt), expected: 'Date (YYYY-MM-DD)' });
+      }
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
+
   async uploadMasterContractsAtomic(payload = {}, context = {}) {
     const contracts = Array.isArray(payload.contracts) ? payload.contracts : [];
     const uploadMode = String(payload.uploadMode || 'new').toLowerCase();
@@ -144,13 +404,13 @@ export default class EntityService {
     const actor = this.resolveAuditActor(context);
 
     if (contracts.length === 0) {
-      const error = new Error('File upload kosong. Tidak ada data kontrak yang bisa diproses.');
+      const error = new Error('Upload file is empty. No contract data to process.');
       error.statusCode = 400;
       throw error;
     }
 
     if (uploadMode === 'revise' && !selectedRevisionValue) {
-      const error = new Error('Mode revisi membutuhkan contract yang dipilih.');
+      const error = new Error('Revise mode requires a contract to be selected.');
       error.statusCode = 400;
       throw error;
     }
@@ -167,14 +427,14 @@ export default class EntityService {
         .filter(Boolean);
 
       if (contractIds.length !== contracts.length) {
-        const error = new Error('Sebagian baris tidak memiliki contract_id yang valid. Periksa kembali template upload.');
+        const error = new Error('Some rows are missing a valid contract_id. Please check the upload template.');
         error.statusCode = 400;
         throw error;
       }
 
       const duplicateInFile = contractIds.find((id, index) => contractIds.indexOf(id) !== index);
       if (duplicateInFile) {
-        const error = new Error(`Terdapat contract_id duplikat di file upload: ${duplicateInFile}`);
+        const error = new Error(`Duplicate contract_id found in upload file: ${duplicateInFile}`);
         error.statusCode = 400;
         throw error;
       }
@@ -192,7 +452,7 @@ export default class EntityService {
 
       if (nonRevisionConflicts.length > 0) {
         const existsList = nonRevisionConflicts.map((item) => item.contract_id).join(', ');
-        const error = new Error(`Upload dibatalkan karena contract_id sudah terdaftar: ${existsList}`);
+        const error = new Error(`Upload cancelled: contract_id already registered: ${existsList}`);
         error.statusCode = 409;
         throw error;
       }
@@ -226,21 +486,21 @@ export default class EntityService {
       }
 
       if (!revisionBaseContract) {
-        const error = new Error('Kontrak yang dipilih untuk revisi tidak ditemukan berdasarkan contract_id atau contract_no.');
+        const error = new Error('The selected contract for revision was not found by contract_id or contract_no.');
         error.statusCode = 404;
         throw error;
       }
 
       const status = String(revisionBaseContract.contract_status || '').trim().toUpperCase();
       if (status !== 'REVISION') {
-        const error = new Error('Kontrak yang bisa direvisi hanya yang berstatus REVISION.');
+        const error = new Error('Only contracts with status REVISION can be revised.');
         error.statusCode = 400;
         throw error;
       }
 
       revisionContractNo = String(revisionBaseContract.contract_no || '').trim();
       if (!revisionContractNo) {
-        const error = new Error('Kontrak revisi tidak memiliki contract_no sebagai acuan.');
+        const error = new Error('The revision contract does not have a contract_no as reference.');
         error.statusCode = 400;
         throw error;
       }
@@ -250,13 +510,13 @@ export default class EntityService {
       for (let i = 0; i < contracts.length; i += 1) {
         const incomingContractNo = String(contracts[i]?.contract_no || '').trim();
         if (!incomingContractNo) {
-          const error = new Error(`Baris ke-${i + 1}: contract_no wajib diisi dan harus sama dengan kontrak yang direvisi (${revisionContractBase}).`);
+          const error = new Error(`Row ${i + 1}: contract_no is required and must match the revised contract (${revisionContractBase}).`);
           error.statusCode = 400;
           throw error;
         }
         const incomingBase = (String(incomingContractNo).match(/^(.*?)(?:_V\d+_.*)?$/i) || [incomingContractNo])[1];
         if (incomingBase !== revisionContractBase) {
-          const error = new Error(`Baris ke-${i + 1}: contract_no harus sama dengan kontrak yang direvisi (${revisionContractBase}).`);
+          const error = new Error(`Row ${i + 1}: contract_no must match the revised contract (${revisionContractBase}).`);
           error.statusCode = 400;
           throw error;
         }
@@ -409,7 +669,7 @@ export default class EntityService {
         await tx.notification.create({
           data: {
             title: uploadMode === 'revise' ? 'Master Contract Revision Uploaded' : 'Master Contract Uploaded',
-            message: `${createdContracts.length} master contract berhasil di-upload (${uploadMode}).`,
+            message: `${createdContracts.length} master contract(s) uploaded successfully (${uploadMode}).`,
             type: 'INFO',
             module: 'CONFIG',
             reference_type: 'MasterContract',
@@ -426,7 +686,7 @@ export default class EntityService {
 
       return result;
     } catch (error) {
-      throw this.buildReadableError(error, 'Upload master contract gagal diproses.');
+      throw this.buildReadableError(error, 'Master contract upload failed to process.');
     }
   }
 
@@ -437,13 +697,13 @@ export default class EntityService {
     const actor = this.resolveAuditActor(context);
 
     if (!id) {
-      const error = new Error('Contract ID wajib diisi.');
+      const error = new Error('Contract ID is required.');
       error.statusCode = 400;
       throw error;
     }
 
     if (!['APPROVED', 'REVISION'].includes(action)) {
-      const error = new Error('Aksi approval tidak valid. Gunakan APPROVED atau REVISION.');
+      const error = new Error('Invalid approval action. Use APPROVED or REVISION.');
       error.statusCode = 400;
       throw error;
     }
@@ -452,7 +712,7 @@ export default class EntityService {
       return await prisma.$transaction(async (tx) => {
         const existing = await tx.masterContract.findUnique({ where: { contract_id: id } });
         if (!existing) {
-          const error = new Error(`Master Contract ${id} tidak ditemukan.`);
+          const error = new Error(`Master Contract ${id} not found.`);
           error.statusCode = 404;
           throw error;
         }
@@ -493,8 +753,8 @@ export default class EntityService {
             title: action === 'REVISION' ? 'Contract Needs Revision' : 'Contract Approved',
             message:
               action === 'REVISION'
-                ? `Master Contract ${id} perlu revisi: ${remarks || '-'}`
-                : `Master Contract ${id} telah disetujui`,
+                ? `Master Contract ${id} needs revision: ${remarks || '-'}`
+                : `Master Contract ${id} has been approved`,
             type: action === 'REVISION' ? 'WARNING' : 'INFO',
             module: 'CONFIG',
             reference_type: 'MasterContract',
@@ -506,7 +766,7 @@ export default class EntityService {
         return updated;
       });
     } catch (error) {
-      throw this.buildReadableError(error, 'Proses approval contract gagal.');
+      throw this.buildReadableError(error, 'Contract approval process failed.');
     }
   }
 
@@ -779,13 +1039,13 @@ export default class EntityService {
     const actor = this.resolveAuditActor(context);
 
     if (debtors.length === 0) {
-      const error = new Error('File upload kosong. Tidak ada data debtor yang bisa diproses.');
+      const error = new Error('Upload file is empty. No debtor data to process.');
       error.statusCode = 400;
       throw error;
     }
 
     if (uploadMode === 'revise' && !selectedRevisionValue) {
-      const error = new Error('Mode revisi membutuhkan debtor yang dipilih.');
+      const error = new Error('Revise mode requires a debtor to be selected.');
       error.statusCode = 400;
       throw error;
     }
@@ -803,7 +1063,7 @@ export default class EntityService {
         .filter(Boolean);
 
       if (nomorPesertas.length !== debtors.length) {
-        const error = new Error('Sebagian baris tidak memiliki nomor_peserta yang valid. Periksa kembali template upload.');
+        const error = new Error('Some rows are missing a valid nomor_peserta. Please check the upload template.');
         error.statusCode = 400;
         throw error;
       }
@@ -811,7 +1071,7 @@ export default class EntityService {
       // Check for duplicates in file
       const duplicateInFile = nomorPesertas.find((np, index) => nomorPesertas.indexOf(np) !== index);
       if (duplicateInFile) {
-        const error = new Error(`Terdapat nomor_peserta duplikat di file upload: ${duplicateInFile}`);
+        const error = new Error(`Duplicate nomor_peserta found in upload file: ${duplicateInFile}`);
         error.statusCode = 400;
         throw error;
       }
@@ -834,7 +1094,7 @@ export default class EntityService {
 
       if (nonRevisionConflicts.length > 0) {
         const existsList = nonRevisionConflicts.map((item) => item.nomor_peserta).join(', ');
-        const error = new Error(`Upload dibatalkan karena nomor_peserta sudah terdaftar: ${existsList}`);
+        const error = new Error(`Upload cancelled: nomor_peserta already registered: ${existsList}`);
         error.statusCode = 409;
         throw error;
       }
@@ -891,7 +1151,7 @@ export default class EntityService {
       const revisionableNomorPesertas = Array.from(revisionDebtorMap.keys());
       
       if (revisionableNomorPesertas.length === 0) {
-        const error = new Error(`Tidak ada debtor dalam data upload yang memiliki status REVISION di sistem.`);
+        const error = new Error(`None of the uploaded debtors have REVISION status in the system.`);
         error.statusCode = 404;
         throw error;
       }
@@ -981,7 +1241,7 @@ export default class EntityService {
             const revisionDebtor = revisionDebtorMap.get(nomorPeserta);
             if (!revisionDebtor) {
               // This should already be caught in validation, but double-check
-              const error = new Error(`Debtor dengan nomor_peserta "${nomorPeserta}" tidak ditemukan atau tidak berstatus REVISION.`);
+              const error = new Error(`Debtor with nomor_peserta "${nomorPeserta}" was not found or does not have REVISION status.`);
               error.statusCode = 404;
               throw error;
             }
@@ -1096,7 +1356,7 @@ export default class EntityService {
         await tx.notification.create({
           data: {
             title: uploadMode === 'revise' ? 'Debtor Revision Uploaded' : 'Debtor Uploaded',
-            message: `${createdDebtors.length} debtor berhasil di-upload (${uploadMode}).`,
+            message: `${createdDebtors.length} debtor(s) uploaded successfully (${uploadMode}).`,
             type: 'INFO',
             module: 'DEBTOR',
             reference_type: 'Debtor',
@@ -1113,7 +1373,7 @@ export default class EntityService {
 
       return result;
     } catch (error) {
-      throw this.buildReadableError(error, 'Upload debtor gagal diproses.');
+      throw this.buildReadableError(error, 'Debtor upload failed to process.');
     }
   }
 

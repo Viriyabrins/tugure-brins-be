@@ -7,19 +7,29 @@ import config from '../config/index.js';
  */
 async function getKeycloakAdminToken() {
   const tokenUrl = `${config.keycloakUrl.replace(/\/$/, '')}/realms/${encodeURIComponent(config.keycloakRealm)}/protocol/openid-connect/token`;
-
-  const body = new URLSearchParams({
-    grant_type: 'password',
-    username: config.keycloakUsername,
-    password: config.keycloakPassword,
-    client_id: config.keycloakClientId,
-    client_secret: config.keycloakClientSecret,
-  });
+  // Prefer client_credentials when client secret is available (safer for headless services)
+  let bodyParams;
+  if (config.keycloakClientSecret) {
+    bodyParams = new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: config.keycloakClientId,
+      client_secret: config.keycloakClientSecret,
+    });
+  } else if (config.keycloakUsername && config.keycloakPassword) {
+    bodyParams = new URLSearchParams({
+      grant_type: 'password',
+      username: config.keycloakUsername,
+      password: config.keycloakPassword,
+      client_id: config.keycloakClientId,
+    });
+  } else {
+    throw new Error('Keycloak admin credentials not configured');
+  }
 
   const res = await fetch(tokenUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
+    body: bodyParams,
   });
 
   if (!res.ok) {
@@ -28,7 +38,7 @@ async function getKeycloakAdminToken() {
   }
 
   const data = await res.json();
-  console.log('[Email] Keycloak admin access_token:', data.access_token);
+  console.log('[Email] Keycloak admin access_token acquired (masked)');
   return data.access_token;
 }
 
@@ -38,7 +48,13 @@ async function getKeycloakAdminToken() {
  * 2. GET /admin/realms/{realm}/groups/{groupId}/members → get users
  */
 async function getUsersByGroup(groupName) {
-  const adminToken = await getKeycloakAdminToken();
+  let adminToken;
+  try {
+    adminToken = await getKeycloakAdminToken();
+  } catch (err) {
+    console.warn('[Email] Could not obtain Keycloak admin token, skipping group lookup:', err.message);
+    return [];
+  }
   const baseUrl = config.keycloakUrl.replace(/\/$/, '');
   const realm = encodeURIComponent(config.keycloakRealm);
 

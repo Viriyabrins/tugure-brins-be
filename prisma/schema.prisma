@@ -369,9 +369,12 @@ model MasterContract {
   // === Rate & Komisi ===
   share_tugure_percentage    Decimal?   @db.Decimal(5, 2)
   premium_rate               Decimal?   @db.Decimal(5, 2)
-  reinsurance_commission_pct Decimal?   @db.Decimal(5, 2) // RIC rate
+  reinsurance_commission_pct Int?                         // RIC rate
   profit_commission_pct      Decimal?   @db.Decimal(5, 2)
   brokerage_fee_pct          Decimal?   @db.Decimal(5, 2) // BF rate
+  qs_tugure_share            Int?       // required by app-layer validation
+  qs_cedant_share            Int?
+  deductible                 Int?
 
   // === Reporting & Payment ===
   reporting_participant_days Int?       // 30
@@ -393,7 +396,7 @@ model MasterContract {
   cut_off_basis              String?    // On Gross
 
   // === Loss Ratio ===
-  loss_ratio_value           Decimal?   @db.Decimal(5, 2)
+  loss_ratio_value           Int?
   loss_ratio_basis           String?    // On Gross
 
   // === Evaluation Period ===
@@ -403,12 +406,12 @@ model MasterContract {
   // === Tenor & Plafond ===
   max_tenor_value            Int?       // 36
   max_tenor_unit             String?    // Bulan
-  max_sum_insured            Decimal?   @db.Decimal(25, 2) // max plafond / sum insured
+  max_sum_insured            Int?                          // max plafond / sum insured
 
   // === Coverage Limit ===
   perils_covers              String?    // deskripsi peril
   limit_coverage_type        String?    // Single Limit
-  kolektibilitas_max         String?    // "5", "3"
+  kolektibilitas_max         Int?       // 5, 3
   kolektibilitas_limit_amount Decimal?  @db.Decimal(25, 2)
 
   // === Metadata ===
@@ -609,9 +612,12 @@ model ContractRevise {
   // === Rate & Komisi ===
   share_tugure_percentage    Decimal? @db.Decimal(5, 2)
   premium_rate               Decimal? @db.Decimal(5, 2)
-  reinsurance_commission_pct Decimal? @db.Decimal(5, 2)
+  reinsurance_commission_pct Int?
   profit_commission_pct      Decimal? @db.Decimal(5, 2)
   brokerage_fee_pct          Decimal? @db.Decimal(5, 2)
+  qs_tugure_share            Int?
+  qs_cedant_share            Int?
+  deductible                 Int?
 
   // === Reporting & Payment ===
   reporting_participant_days Int?
@@ -633,7 +639,7 @@ model ContractRevise {
   cut_off_basis              String?
 
   // === Loss Ratio ===
-  loss_ratio_value           Decimal? @db.Decimal(5, 2)
+  loss_ratio_value           Int?
   loss_ratio_basis           String?
 
   // === Evaluation Period ===
@@ -643,12 +649,12 @@ model ContractRevise {
   // === Tenor & Plafond ===
   max_tenor_value            Int?
   max_tenor_unit             String?
-  max_sum_insured            Decimal? @db.Decimal(25, 2)
+  max_sum_insured            Int?
 
   // === Coverage Limit ===
   perils_covers              String?
   limit_coverage_type        String?
-  kolektibilitas_max         String?
+  kolektibilitas_max         Int?
   kolektibilitas_limit_amount Decimal? @db.Decimal(25, 2)
 
   // === Metadata ===

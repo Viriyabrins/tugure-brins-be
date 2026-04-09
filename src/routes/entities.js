@@ -26,6 +26,30 @@ export default async function (fastify) {
   );
 
   fastify.post(
+    '/apps/:appId/master-contracts/validate',
+    { preHandler: fastify.authenticate },
+    controller.validateMasterContracts.bind(controller)
+  );
+
+  fastify.post(
+    '/apps/:appId/debtors/validate',
+    { preHandler: fastify.authenticate },
+    controller.validateDebtors.bind(controller)
+  );
+
+  fastify.post(
+    '/apps/:appId/claims/validate',
+    { preHandler: fastify.authenticate },
+    controller.validateClaims.bind(controller)
+  );
+
+  fastify.post(
+    '/apps/:appId/subrogations/validate',
+    { preHandler: fastify.authenticate },
+    controller.validateSubrogation.bind(controller)
+  );
+
+  fastify.post(
     '/apps/:appId/master-contracts/upload',
     { preHandler: fastify.authenticate },
     controller.uploadMasterContracts.bind(controller)
