@@ -98,7 +98,7 @@ model Claim {
   max_coverage             Decimal?  @db.Decimal(25, 2)
   kol_debitur              String?
   dol                      DateTime?
-  nilai_klaim              Decimal   @db.Decimal(25, 2)
+  nilai_klaim              Int?
   share_tugure_percentage  Decimal?  @db.Decimal(5, 2)
   share_tugure_amount      Decimal?  @db.Decimal(25, 2)
   check_bdo_premi          Boolean   @default(false)
