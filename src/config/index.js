@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -50,6 +51,19 @@ const config = {
   keycloakUsername: process.env.KEYCLOAK_USERNAME || process.env.VITE_KEYCLOAK_USERNAME,
   keycloakPassword: process.env.KEYCLOAK_PASSWORD || process.env.VITE_KEYCLOAK_PASSWORD,
   keycloakClientSecret: process.env.KEYCLOAK_CLIENT_SECRET || process.env.VITE_KEYCLOAK_CLIENT_SECRET,
+  // Path ke file PEM CA untuk sertifikat Keycloak yang self-signed / internal CA.
+  // Di production dengan CA publik (Let's Encrypt dsb.), biarkan kosong.
+  keycloakCaCert: (() => {
+    const certPath = process.env.KEYCLOAK_CA_CERT_PATH;
+    if (!certPath) return null;
+    const resolved = path.resolve(__dirname, '..', '..', certPath);
+    try {
+      return fs.readFileSync(resolved);
+    } catch (err) {
+      console.warn(`[config] KEYCLOAK_CA_CERT_PATH="${certPath}" could not be read: ${err.message}`);
+      return null;
+    }
+  })(),
   frontendUrl: process.env.FRONTEND_URL || process.env.VITE_KEYCLOAK_REDIRECT_URI || 'http://localhost:5173/Dashboard',
   smtp: {
     host: process.env.SMTP_HOST || 'smtp.gmail.com',

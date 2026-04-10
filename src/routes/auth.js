@@ -38,6 +38,9 @@ export default async function (fastify) {
 
   fastify.get('/auth/keycloak/callback', async (request, reply) => {
     try {
+      try {
+        console.log('[AuthCallback] incoming query:', JSON.stringify(request.query));
+      } catch (err) {}
       const authError = request.query?.error;
       const authErrorDescription = request.query?.error_description;
       const code = request.query?.code;

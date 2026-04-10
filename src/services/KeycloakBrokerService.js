@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { Agent, fetch as undiciFetch } from 'undici';
 
 const STATE_TTL_MS = 5 * 60 * 1000;
 
@@ -36,6 +37,13 @@ export default class KeycloakBrokerService {
     constructor(config) {
         this.config = config;
         this.pendingStates = new Map();
+
+        // Jika ada CA cert (untuk Keycloak dengan sertifikat self-signed / internal CA),
+        // buat satu Agent yang dipakai ulang untuk semua request ke Keycloak.
+        // Di production dengan CA publik, config.keycloakCaCert = null → pakai global fetch biasa.
+        this._dispatcher = config.keycloakCaCert
+            ? new Agent({ connect: { ca: config.keycloakCaCert } })
+            : null;
     }
 
     ensureConfigured() {
@@ -44,6 +52,18 @@ export default class KeycloakBrokerService {
             error.statusCode = 500;
             throw error;
         }
+    }
+
+    /**
+     * Wrapper fetch yang menggunakan undici Agent dengan custom CA cert
+     * ketika Keycloak memakai sertifikat self-signed / internal CA.
+     * Di production (CA publik, tanpa KEYCLOAK_CA_CERT_PATH), pakai global fetch biasa.
+     */
+    _fetch(url, options = {}) {
+        if (this._dispatcher) {
+            return undiciFetch(url, { ...options, dispatcher: this._dispatcher });
+        }
+        return fetch(url, options);
     }
 
     get issuerBaseUrl() {
@@ -89,6 +109,12 @@ export default class KeycloakBrokerService {
             createdAt: Date.now(),
         });
 
+        try {
+            console.log(`[KeycloakBroker] buildLoginRedirect stored state=${state} frontendRedirectUri=${this.normalizeFrontendRedirect(frontendRedirectUri)} code_challenge=${codeChallenge.slice(0,8)}...`);
+        } catch (err) {
+            // ignore logging failures
+        }
+
         const params = new URLSearchParams({
             client_id: this.config.keycloakClientId,
             response_type: 'code',
@@ -105,8 +131,17 @@ export default class KeycloakBrokerService {
     async exchangeCode({ code, state, callbackUri }) {
         this.ensureConfigured();
 
+        try {
+            console.log(`[KeycloakBroker] exchangeCode called state=${state} code=${String(code).slice(0,8)} callbackUri=${callbackUri} pendingStates=${this.pendingStates.size}`);
+        } catch (err) {
+            // ignore logging failures
+        }
+
         const stateEntry = this.pendingStates.get(state);
         if (!stateEntry) {
+            try {
+                console.warn(`[KeycloakBroker] missing state entry for state=${state}`);
+            } catch (err) {}
             const error = new Error('Invalid or expired OAuth state');
             error.statusCode = 400;
             throw error;
@@ -122,11 +157,19 @@ export default class KeycloakBrokerService {
             code_verifier: stateEntry.codeVerifier,
         });
 
-        const response = await fetch(this.tokenEndpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body,
-        });
+        let response;
+        try {
+            response = await this._fetch(this.tokenEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body,
+            });
+        } catch (err) {
+            console.error('[KeycloakBroker] token request failed', err?.message || err);
+            const error = new Error(`Failed to contact token endpoint: ${err?.message || 'network error'}`);
+            error.statusCode = 502;
+            throw error;
+        }
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -164,7 +207,7 @@ export default class KeycloakBrokerService {
             client_secret: this.config.keycloakClientSecret,
         });
 
-        const response = await fetch(this.tokenEndpoint, {
+        const response = await this._fetch(this.tokenEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body,
@@ -199,7 +242,7 @@ export default class KeycloakBrokerService {
         if (refreshToken) body.set('refresh_token', refreshToken);
         if (idTokenHint) body.set('id_token_hint', idTokenHint);
 
-        await fetch(this.logoutEndpoint, {
+        await this._fetch(this.logoutEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body,
@@ -221,7 +264,7 @@ export default class KeycloakBrokerService {
             client_secret: this.config.keycloakClientSecret,
         });
 
-        const response = await fetch(this.tokenEndpoint, {
+        const response = await this._fetch(this.tokenEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body,
@@ -256,7 +299,7 @@ export default class KeycloakBrokerService {
             scope: 'openid',
         });
 
-        const response = await fetch(this.tokenEndpoint, {
+        const response = await this._fetch(this.tokenEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body,
@@ -314,7 +357,7 @@ export default class KeycloakBrokerService {
         const realm = encodeURIComponent(this.config.keycloakRealm);
         const resetUrl = `${root}/admin/realms/${realm}/users/${encodeURIComponent(userId)}/reset-password`;
 
-        const response = await fetch(resetUrl, {
+        const response = await this._fetch(resetUrl, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
