@@ -321,9 +321,10 @@ export default class EntityService {
    * Validate parsed claim rows (as returned by parseClaimFile on the frontend).
    * Date fields are stored as raw strings/Date objects; numeric fields are already
    * converted (number or null). Validates date parseability and required numeric fields.
+   * If batchId is provided, also validates that nomor_peserta + policy_no exist in batch debtors.
    * Returns { valid: boolean, errors: Array<{row, field, value, expected}> }.
    */
-  validateClaimRows(rows = []) {
+  async validateClaimRows(rows = [], batchId = null) {
     const DATE_FIELDS = ['tanggal_realisasi_kredit', 'dol'];
     const REQUIRED_NUMERIC = ['nilai_klaim'];
     const OPTIONAL_NUMERIC = ['plafond', 'max_coverage', 'share_tugure_percentage', 'share_tugure_amount'];
@@ -339,10 +340,30 @@ export default class EntityService {
 
     const errors = [];
 
+    // Build a set of valid (policy_no, nomor_peserta) pairs from batch debtors if batch_id provided
+    let validDebtorPairs = new Set();
+    if (batchId) {
+      try {
+        const batchDebtors = await prisma.debtor.findMany({
+          where: { batch_id: batchId },
+          select: { policy_no: true, nomor_peserta: true },
+        });
+        
+        for (const debtor of batchDebtors) {
+          const key = `${String(debtor.policy_no || '').trim().toLowerCase()}||${String(debtor.nomor_peserta || '').trim().toLowerCase()}`;
+          validDebtorPairs.add(key);
+        }
+      } catch (err) {
+        console.error('Error fetching batch debtors for validation:', err);
+        // Don't block validation if debtor fetch fails - treat as warning
+      }
+    }
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i] || {};
       const rowNum = row.excelRow || i + 2;
 
+      // Validate date fields
       for (const field of DATE_FIELDS) {
         const raw = row[field];
         if (isBlank(raw)) continue;
@@ -351,6 +372,7 @@ export default class EntityService {
         }
       }
 
+      // Validate required numeric fields
       for (const field of REQUIRED_NUMERIC) {
         const val = row[field];
         if (val === null || val === undefined || (typeof val !== 'number') || !Number.isFinite(val)) {
@@ -358,11 +380,25 @@ export default class EntityService {
         }
       }
 
+      // Validate optional numeric fields
       for (const field of OPTIONAL_NUMERIC) {
         const val = row[field];
         if (val === null || val === undefined) continue;
         if (typeof val !== 'number' || !Number.isFinite(val)) {
           errors.push({ row: rowNum, field, value: String(val), expected: 'Number' });
+        }
+      }
+
+      // Validate debtor exists in batch debtors (if batch_id provided)
+      if (batchId && validDebtorPairs.size > 0) {
+        const claimKey = `${String(row.policy_no || '').trim().toLowerCase()}||${String(row.nomor_peserta || '').trim().toLowerCase()}`;
+        if (!validDebtorPairs.has(claimKey)) {
+          errors.push({
+            row: rowNum,
+            field: 'nomor_peserta + policy_no',
+            value: `policy_no=${row.policy_no}, nomor_peserta=${row.nomor_peserta}`,
+            expected: 'Must exist in batch debtors',
+          });
         }
       }
     }
