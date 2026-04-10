@@ -25,6 +25,7 @@ export async function startDBChannel() {
       });
       // handle entity-specific logic
     }
+    console.log("Debtorssssssss",payload);
   });
 
   client.on('error', (error) => {
