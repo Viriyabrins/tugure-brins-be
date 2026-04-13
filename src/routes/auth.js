@@ -79,8 +79,12 @@ export default async function (fastify) {
 
   fastify.post('/auth/keycloak/refresh', async (request, reply) => {
     try {
-      const tokens = await keycloakBroker.refresh({
+      // authService.refresh() detects the realm from the refresh token iss claim
+      // and calls the correct Keycloak token endpoint with the correct client
+      // credentials — handles both multi-realm direct-login and OIDC broker tokens.
+      const tokens = await authService.refresh({
         refreshToken: request.body?.refreshToken,
+        idToken: request.body?.idToken,
       });
       return reply.send({ success: true, data: tokens });
     } catch (error) {
@@ -93,11 +97,12 @@ export default async function (fastify) {
 
   fastify.post('/auth/keycloak/logout', async (request, reply) => {
     try {
-      await keycloakBroker.logout({
-        refreshToken: request.body?.refreshToken,
-        idTokenHint: request.body?.idToken,
-        postLogoutRedirectUri: request.body?.redirectUri || `${request.protocol}://${request.headers.host}/`,
-      });
+      const { refreshToken, idToken } = request.body || {};
+      // authService.logout() detects the realm from the token iss claim and
+      // calls the correct Keycloak endpoint with the correct client credentials,
+      // ensuring the session is fully terminated regardless of which realm the
+      // user authenticated against (brins, tugure, or OIDC broker single-realm).
+      await authService.logout({ refreshToken, idToken });
       return reply.send({ success: true });
     } catch (error) {
       return reply.status(error.statusCode || 500).send({

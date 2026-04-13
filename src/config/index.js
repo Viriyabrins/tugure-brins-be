@@ -51,6 +51,14 @@ const config = {
   keycloakUsername: process.env.KEYCLOAK_USERNAME || process.env.VITE_KEYCLOAK_USERNAME,
   keycloakPassword: process.env.KEYCLOAK_PASSWORD || process.env.VITE_KEYCLOAK_PASSWORD,
   keycloakClientSecret: process.env.KEYCLOAK_CLIENT_SECRET || process.env.VITE_KEYCLOAK_CLIENT_SECRET,
+  // Multi-realm login configuration
+  keycloakScope: process.env.KEYCLOAK_SCOPE || 'openid',
+  keycloakRealmBrins: process.env.KEYCLOAK_REALM_BRINS || 'brins',
+  keycloakRealmTugure: process.env.KEYCLOAK_REALM_TUGURE || 'tugure',
+  keycloakClientIdBrins: process.env.KEYCLOAK_CLIENT_ID_BRINS,
+  keycloakClientSecretBrins: process.env.KEYCLOAK_CLIENT_SECRET_BRINS,
+  keycloakClientIdTugure: process.env.KEYCLOAK_CLIENT_ID_TUGURE,
+  keycloakClientSecretTugure: process.env.KEYCLOAK_CLIENT_SECRET_TUGURE,
   // Path ke file PEM CA untuk sertifikat Keycloak yang self-signed / internal CA.
   // Di production dengan CA publik (Let's Encrypt dsb.), biarkan kosong.
   keycloakCaCert: (() => {
