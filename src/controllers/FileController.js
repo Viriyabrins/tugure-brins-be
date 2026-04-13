@@ -14,7 +14,9 @@ export default class FileController {
         return sendError(reply, { message: 'No file provided' }, 400);
       }
 
-      const { recordId, batchId } = request.body || request.query;
+      // With @fastify/multipart, form fields are on data.fields
+      const recordId = data.fields.recordId?.value;
+      const batchId = data.fields.batchId?.value;
 
       if (!recordId || !batchId) {
         return sendError(reply, { message: 'recordId and batchId are required' }, 400);
