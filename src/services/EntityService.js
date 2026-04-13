@@ -165,11 +165,11 @@ export default class EntityService {
     const INT_FIELDS = [
       'reporting_participant_days', 'reporting_claim_days',
       'evaluation_period_value', 'max_tenor_value',
-      'reinsurance_commission_pct', 'loss_ratio_value', 'max_sum_insured', 'kolektibilitas_max',
+      'loss_ratio_value', 'max_sum_insured', 'kolektibilitas_max',
       'qs_tugure_share', 'qs_cedant_share', 'deductible',
     ];
     const DECIMAL_FIELDS = [
-      'profit_commission_pct', 'brokerage_fee_pct',
+      'profit_commission_pct', 'brokerage_fee_pct', 'reinsurance_commission_pct',
       'stop_loss_value', 'cut_loss_value', 'cut_off_value',
       'kolektibilitas_limit_amount',
       'share_tugure_percentage',

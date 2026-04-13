@@ -369,7 +369,7 @@ model MasterContract {
   // === Rate & Komisi ===
   share_tugure_percentage    Decimal?   @db.Decimal(5, 2)
   premium_rate               Decimal?   @db.Decimal(5, 2)
-  reinsurance_commission_pct Int?                         // RIC rate
+  reinsurance_commission_pct Decimal?   @db.Decimal(5, 2) // RIC rate
   profit_commission_pct      Decimal?   @db.Decimal(5, 2)
   brokerage_fee_pct          Decimal?   @db.Decimal(5, 2) // BF rate
   qs_tugure_share            Int?       // required by app-layer validation
