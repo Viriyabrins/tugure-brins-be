@@ -76,6 +76,12 @@ const config = {
     pass: process.env.SMTP_PASS,
     fromName: process.env.SMTP_FROM_NAME || 'Tugure BRINS System',
   },
+  minio: {
+    endpoint: process.env.MINIO_ENDPOINT,
+    accessKey: process.env.MINIO_ACCESS_KEY,
+    secretKey: process.env.MINIO_SECRET_KEY,
+    bucket: process.env.MINIO_BUCKET || 'brins',
+  },
 };
 
 export default config;
