@@ -4,27 +4,23 @@ import config from '../config/index.js';
 
 /**
  * Get a Keycloak Admin API access token using client credentials grant.
+ * Uses the BRINS realm client as the system service account for email operations.
  */
 async function getKeycloakAdminToken() {
-  const tokenUrl = `${config.keycloakUrl.replace(/\/$/, '')}/realms/${encodeURIComponent(config.keycloakRealm)}/protocol/openid-connect/token`;
-  // Prefer client_credentials when client secret is available (safer for headless services)
-  let bodyParams;
-  if (config.keycloakClientSecret) {
-    bodyParams = new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: config.keycloakClientId,
-      client_secret: config.keycloakClientSecret,
-    });
-  } else if (config.keycloakUsername && config.keycloakPassword) {
-    bodyParams = new URLSearchParams({
-      grant_type: 'password',
-      username: config.keycloakUsername,
-      password: config.keycloakPassword,
-      client_id: config.keycloakClientId,
-    });
-  } else {
-    throw new Error('Keycloak admin credentials not configured');
+  const realm = config.keycloakRealmBrins;
+  const clientId = config.keycloakClientIdBrins;
+  const clientSecret = config.keycloakClientSecretBrins;
+
+  if (!config.keycloakUrl || !realm || !clientId || !clientSecret) {
+    throw new Error('Keycloak admin credentials not configured (BRINS realm)');
   }
+
+  const tokenUrl = `${config.keycloakUrl.replace(/\/$/, '')}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/token`;
+  const bodyParams = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: clientId,
+    client_secret: clientSecret,
+  });
 
   const res = await fetch(tokenUrl, {
     method: 'POST',
@@ -56,7 +52,7 @@ async function getUsersByGroup(groupName) {
     return [];
   }
   const baseUrl = config.keycloakUrl.replace(/\/$/, '');
-  const realm = encodeURIComponent(config.keycloakRealm);
+  const realm = encodeURIComponent(config.keycloakRealmBrins);
 
   // Step 1: Find the group by name
   const groupsUrl = `${baseUrl}/admin/realms/${realm}/groups?search=${encodeURIComponent(groupName)}`;

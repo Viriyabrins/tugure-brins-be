@@ -183,12 +183,126 @@ export default class AuthService {
         clientSecret: this.config.keycloakClientSecretTugure,
       };
     }
-    // Fall back to single-realm (OIDC broker) config
-    return {
-      realm: this.config.keycloakRealm,
-      clientId: this.config.keycloakClientId,
-      clientSecret: this.config.keycloakClientSecret,
-    };
+    // No matching realm found — return nulls so callers can throw a clear error
+    return { realm: null, clientId: null, clientSecret: null };
+  }
+
+  /**
+   * Obtain a service-account (client_credentials) token for the given realm.
+   * The confidential client must have "Service Accounts Enabled" and the
+   * service-account user must hold the `manage-users` role from realm-management.
+   */
+  async _getAdminToken({ realm, clientId, clientSecret }) {
+    const tokenUrl = `${this.config.keycloakUrl.replace(/\/$/, '')}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/token`;
+    const body = new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: clientId,
+      client_secret: clientSecret,
+    });
+    const response = await this._fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.access_token) {
+      const error = new Error(payload.error_description || payload.error || 'Failed to obtain admin token');
+      error.statusCode = 500;
+      throw error;
+    }
+    return payload.access_token;
+  }
+
+  /**
+   * Verify a user's current password via a direct-access (password) grant.
+   * Returns true when credentials are valid, false otherwise.
+   */
+  async _verifyUserPassword({ realm, clientId, clientSecret, username, password }) {
+    const tokenUrl = `${this.config.keycloakUrl.replace(/\/$/, '')}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/token`;
+    const body = new URLSearchParams({
+      grant_type: 'password',
+      client_id: clientId,
+      client_secret: clientSecret,
+      username,
+      password,
+      scope: 'openid',
+    });
+    const response = await this._fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    }).catch(() => null);
+    return Boolean(response?.ok);
+  }
+
+  /**
+   * Change a Keycloak user's password.
+   * Detects the realm from the user's current access token so the correct
+   * realm admin API is called — works for both brins and tugure users.
+   *
+   * @param {{ userAccessToken: string, userId: string, username: string, currentPassword: string, newPassword: string }} param0
+   */
+  async changePassword({ userAccessToken, userId, username, currentPassword, newPassword }) {
+    if (!userId || !username) {
+      const error = new Error('User identity is required');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!currentPassword) {
+      const error = new Error('Current password is required');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      const error = new Error('New password must be at least 6 characters');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const keycloakUrl = this.config.keycloakUrl;
+    if (!keycloakUrl) {
+      const error = new Error('KEYCLOAK_URL is not configured');
+      error.statusCode = 500;
+      throw error;
+    }
+
+    const { realm, clientId, clientSecret } = this._resolveRealmFromToken(userAccessToken);
+    if (!realm || !clientId || !clientSecret) {
+      const error = new Error('Unable to determine realm from user token');
+      error.statusCode = 500;
+      throw error;
+    }
+
+    // 1. Verify the current password
+    const isValid = await this._verifyUserPassword({ realm, clientId, clientSecret, username, password: currentPassword });
+    if (!isValid) {
+      const error = new Error('Current password is incorrect');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // 2. Get admin token
+    const adminToken = await this._getAdminToken({ realm, clientId, clientSecret });
+
+    // 3. Reset password via Admin REST API
+    const resetUrl = `${keycloakUrl.replace(/\/$/, '')}/admin/realms/${encodeURIComponent(realm)}/users/${encodeURIComponent(userId)}/reset-password`;
+    const response = await this._fetch(resetUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({ type: 'password', value: newPassword, temporary: false }),
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const error = new Error(payload.errorMessage || payload.error || 'Failed to change password in Keycloak');
+      error.statusCode = response.status || 500;
+      throw error;
+    }
+
+    return true;
   }
 
   /**

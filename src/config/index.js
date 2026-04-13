@@ -46,11 +46,6 @@ const config = {
   publicSettings: parseJson(process.env.APP_PUBLIC_SETTINGS),
   logLevel: process.env.LOG_LEVEL || 'info',
   keycloakUrl: process.env.KEYCLOAK_URL || process.env.VITE_KEYCLOAK_URL,
-  keycloakRealm: process.env.KEYCLOAK_REALM || process.env.VITE_KEYCLOAK_REALM,
-  keycloakClientId: process.env.KEYCLOAK_CLIENT_ID || process.env.VITE_KEYCLOAK_CLIENT_ID,
-  keycloakUsername: process.env.KEYCLOAK_USERNAME || process.env.VITE_KEYCLOAK_USERNAME,
-  keycloakPassword: process.env.KEYCLOAK_PASSWORD || process.env.VITE_KEYCLOAK_PASSWORD,
-  keycloakClientSecret: process.env.KEYCLOAK_CLIENT_SECRET || process.env.VITE_KEYCLOAK_CLIENT_SECRET,
   // Multi-realm login configuration
   keycloakScope: process.env.KEYCLOAK_SCOPE || 'openid',
   keycloakRealmBrins: process.env.KEYCLOAK_REALM_BRINS || 'brins',
