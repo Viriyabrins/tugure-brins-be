@@ -278,4 +278,172 @@ export async function processClaimRevision(claimNo, remarks = '', auditActor = {
   }
 }
 
-export default { processClaimCheck, processClaimApproval, processClaimRevision };
+/**
+ * Get the highest existing sequence number for claims with a given prefix.
+ * Replaces fetching 9999 claims + client-side iteration on the frontend.
+ */
+export async function getNextClaimSequence(prefix) {
+  if (!prefix) return 0;
+  const latest = await prisma.claim.findFirst({
+    where: { claim_no: { startsWith: prefix } },
+    orderBy: { claim_no: 'desc' },
+    select: { claim_no: true },
+  });
+  if (!latest?.claim_no) return 0;
+  const seq = parseInt(latest.claim_no.replace(prefix, ''), 10);
+  return isNaN(seq) ? 0 : seq;
+}
+
+/**
+ * Create a Subrogation entry with audit log and notifications.
+ * Replaces frontend backend.create("Subrogation", ...) + audit + notify calls.
+ */
+export async function createSubrogationEntry(data = {}, auditActor = {}) {
+  const subrogationId = `SUB-${Date.now()}`;
+  await prisma.subrogation.create({
+    data: {
+      subrogation_id: subrogationId,
+      claim_id: data.claimId || '',
+      debtor_id: data.debtorId || '',
+      recovery_amount: parseFloat(data.recoveryAmount) || 0,
+      recovery_date: data.recoveryDate ? new Date(data.recoveryDate) : null,
+      status: 'SUBMITTED',
+      remarks: data.remarks || '',
+    },
+  });
+  try {
+    await prisma.auditLog.create({
+      data: {
+        action: 'SUBROGATION_CREATED',
+        module: 'SUBROGATION',
+        entity_type: 'Subrogation',
+        entity_id: subrogationId,
+        old_value: '{}',
+        new_value: JSON.stringify({ claim_id: data.claimId, recovery_amount: data.recoveryAmount }),
+        user_email: auditActor.user_email || 'system',
+        user_role: auditActor.user_role || 'system',
+        reason: 'Manual subrogation creation',
+      },
+    });
+  } catch (e) { console.warn('Subrogation audit failed:', e); }
+  try {
+    for (const role of ALL_ROLES) {
+      await prisma.notification.create({
+        data: {
+          title: 'New Subrogation Created',
+          message: `Subrogation ${subrogationId} created for claim ${data.claimId}`,
+          type: 'INFO',
+          module: 'SUBROGATION',
+          reference_id: subrogationId,
+          target_role: role,
+        },
+      });
+    }
+  } catch (e) { console.warn('Subrogation notification failed:', e); }
+  return subrogationId;
+}
+
+/**
+ * Process a subrogation workflow action: 'check', 'approve', or 'revise'.
+ * 'approve' creates a Nota, updates Subrogation status, and notifies.
+ * Returns the nota_number for 'approve', undefined otherwise.
+ */
+export async function processSubrogationWorkflow(subId, action, data = {}, auditActor = {}) {
+  const sub = await prisma.subrogation.findUnique({ where: { subrogation_id: subId } });
+  if (!sub) throw new Error(`Subrogation ${subId} not found`);
+  const actorEmail = auditActor.user_email || 'system';
+
+  if (action === 'check') {
+    await prisma.subrogation.update({
+      where: { subrogation_id: subId },
+      data: { status: 'CHECKED', checked_by: actorEmail, checked_date: new Date(), reviewed_by: actorEmail, review_date: new Date() },
+    });
+    try {
+      await prisma.auditLog.create({
+        data: {
+          action: 'SUBROGATION_CHECK', module: 'SUBROGATION', entity_type: 'Subrogation', entity_id: subId,
+          old_value: JSON.stringify({ status: sub.status }), new_value: JSON.stringify({ status: 'CHECKED' }),
+          user_email: actorEmail, user_role: auditActor.user_role || 'system', reason: '',
+        },
+      });
+    } catch (e) { console.warn('Audit failed:', e); }
+
+  } else if (action === 'approve') {
+    const { contractId = '', recoveryAmount, remarks = '' } = data;
+    const amount = parseFloat(recoveryAmount ?? sub.recovery_amount) || 0;
+    const notaNumber = `NOTA-SBR-${subId}-${Date.now()}`;
+    try {
+      await prisma.nota.create({
+        data: {
+          nota_number: notaNumber, nota_type: 'Subrogation', reference_id: subId,
+          contract_id: contractId, amount, currency: 'IDR', status: 'UNPAID',
+          issued_by: actorEmail, issued_date: new Date(), is_immutable: false,
+          total_actual_paid: 0, reconciliation_status: 'PENDING',
+          premium: 0, commission: 0, claim: amount, total: amount, net_due: amount,
+        },
+      });
+    } catch (e) { console.warn('Failed to create Nota for subrogation:', e); }
+    await prisma.subrogation.update({
+      where: { subrogation_id: subId },
+      data: {
+        status: 'APPROVED', approved_by: actorEmail, approved_date: new Date(),
+        invoiced_by: actorEmail, invoiced_date: new Date(),
+        ...(remarks ? { remarks } : {}),
+      },
+    });
+    try {
+      for (const role of ALL_ROLES) {
+        await prisma.notification.create({
+          data: {
+            title: 'Subrogation Nota Generated',
+            message: `Nota ${notaNumber} created for Subrogation ${subId}. Remarks: ${remarks || '-'}`,
+            type: 'ACTION_REQUIRED', module: 'SUBROGATION', reference_id: subId, target_role: role,
+          },
+        });
+      }
+    } catch (e) { console.warn('Notification failed:', e); }
+    try {
+      await prisma.auditLog.create({
+        data: {
+          action: 'SUBROGATION_APPROVE', module: 'SUBROGATION', entity_type: 'Subrogation', entity_id: subId,
+          old_value: JSON.stringify({ status: sub.status }), new_value: JSON.stringify({ status: 'APPROVED' }),
+          user_email: actorEmail, user_role: auditActor.user_role || 'system', reason: remarks,
+        },
+      });
+    } catch (e) { console.warn('Audit failed:', e); }
+    return notaNumber;
+
+  } else if (action === 'revise') {
+    const { remarks = '' } = data;
+    await prisma.subrogation.update({ where: { subrogation_id: subId }, data: { status: 'REVISION', remarks } });
+    try {
+      await prisma.auditLog.create({
+        data: {
+          action: 'SUBROGATION_REVISE', module: 'SUBROGATION', entity_type: 'Subrogation', entity_id: subId,
+          old_value: JSON.stringify({ status: sub.status }), new_value: JSON.stringify({ status: 'REVISION' }),
+          user_email: actorEmail, user_role: auditActor.user_role || 'system', reason: remarks,
+        },
+      });
+    } catch (e) { console.warn('Audit failed:', e); }
+
+  } else {
+    throw new Error(`Unknown subrogation action: ${action}`);
+  }
+}
+
+/**
+ * Fetch all context data needed by the claim review page in one round-trip.
+ * Replaces 5 parallel backend.list calls from the frontend.
+ */
+export async function getClaimReviewContext() {
+  const [subrogations, notas, contracts, debtors, batches] = await Promise.all([
+    prisma.subrogation.findMany(),
+    prisma.nota.findMany(),
+    prisma.contract.findMany(),
+    prisma.debtor.findMany(),
+    prisma.batch.findMany(),
+  ]);
+  return { subrogations, notas, contracts, debtors, batches };
+}
+
+export default { processClaimCheck, processClaimApproval, processClaimRevision, getNextClaimSequence, createSubrogationEntry, processSubrogationWorkflow, getClaimReviewContext };

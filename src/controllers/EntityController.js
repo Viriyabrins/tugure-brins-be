@@ -6,6 +6,7 @@ import * as ClaimService from '../services/ClaimService.js';
 import prisma from '../prisma/client.js';
 import { NotificationRepository } from '../repositories/NotificationRepository.js';
 import * as WorkflowEmailService from '../services/WorkflowEmailService.js';
+import * as NotaService from '../services/NotaService.js';
 
 const ALL_ROLES = ['maker-brins-role', 'checker-brins-role', 'approver-brins-role', 'checker-tugure-role', 'approver-tugure-role'];
 
@@ -472,6 +473,157 @@ export default class EntityController {
       return sendSuccess(reply, result, 'Claim workflow action processed successfully');
     } catch (error) {
       return sendError(reply, error, error.statusCode || 500);
+    }
+  }
+
+  // ── Debtor aggregates ────────────────────────────────────────────────────
+
+  async getDebtorStatusCounts(request, reply) {
+    try {
+      const counts = await DebtorService.getStatusCounts();
+      return sendSuccess(reply, counts, 'Status counts fetched');
+    } catch (error) {
+      return sendError(reply, error, 500);
+    }
+  }
+
+  async getDebtorBatchSummary(request, reply) {
+    try {
+      const { batchId } = request.params;
+      const summary = await DebtorService.getBatchSummary(batchId);
+      return sendSuccess(reply, summary, 'Batch summary fetched');
+    } catch (error) {
+      return sendError(reply, error, 500);
+    }
+  }
+
+  async batchDebtorWorkflowAction(request, reply) {
+    try {
+      const { debtorIds, action, remarks } = request.body || {};
+      if (!Array.isArray(debtorIds) || debtorIds.length === 0) {
+        return sendError(reply, new Error('debtorIds must be a non-empty array'), 400);
+      }
+      const VALID = ['check', 'approve', 'revise'];
+      if (!VALID.includes(action)) {
+        return sendError(reply, new Error(`action must be one of: ${VALID.join(', ')}`), 400);
+      }
+      const auditActor = {
+        user_email: request.user?.email || 'system',
+        user_role: request.user?.role || 'system',
+      };
+      const result = await DebtorService.processBatchDebtorWorkflowAction(debtorIds, action, remarks || '', auditActor);
+      return sendSuccess(reply, result, `Batch ${action} completed`);
+    } catch (error) {
+      return sendError(reply, error, 500);
+    }
+  }
+
+  // ── Master Contract extras ────────────────────────────────────────────────
+
+  async closeMasterContract(request, reply) {
+    try {
+      const { contractId } = request.params;
+      const { actionType, remarks } = request.body || {};
+      if (!['close', 'invalidate'].includes(actionType)) {
+        return sendError(reply, new Error('actionType must be "close" or "invalidate"'), 400);
+      }
+      const newStatus = actionType === 'close' ? 'Inactive' : 'Archived';
+      const mc = await prisma.masterContract.findUnique({ where: { contract_id: contractId } });
+      if (!mc) return sendError(reply, new Error(`MasterContract ${contractId} not found`), 404);
+      await prisma.masterContract.update({
+        where: { contract_id: contractId },
+        data: { effective_status: newStatus, remark: remarks || '' },
+      });
+      const auditActor = this.entityService.resolveAuditActor({ user: request.user });
+      try {
+        await prisma.auditLog.create({
+          data: {
+            action: `CONTRACT_${actionType.toUpperCase()}`,
+            module: 'CONFIG',
+            entity_type: 'MasterContract',
+            entity_id: contractId,
+            old_value: JSON.stringify({ status: mc.effective_status }),
+            new_value: JSON.stringify({ status: newStatus }),
+            user_email: auditActor.user_email,
+            user_role: auditActor.user_role,
+            reason: remarks || '',
+          },
+        });
+      } catch (auditErr) {
+        console.warn('Audit failed:', auditErr);
+      }
+      return sendSuccess(reply, { contractId, newStatus }, `Contract ${actionType}d`);
+    } catch (error) {
+      return sendError(reply, error, 500);
+    }
+  }
+
+  // ── Claim extras ──────────────────────────────────────────────────────────
+
+  async getNextClaimSequence(request, reply) {
+    try {
+      const prefix = request.query?.prefix || '';
+      const seq = await ClaimService.getNextClaimSequence(prefix);
+      return sendSuccess(reply, { sequence: seq }, 'Sequence fetched');
+    } catch (error) {
+      return sendError(reply, error, 500);
+    }
+  }
+
+  async createSubrogation(request, reply) {
+    try {
+      const auditActor = this.entityService.resolveAuditActor({ user: request.user });
+      const subId = await ClaimService.createSubrogationEntry(request.body || {}, auditActor);
+      return sendCreated(reply, { subrogation_id: subId }, 'Subrogation created');
+    } catch (error) {
+      return sendError(reply, error, 500);
+    }
+  }
+
+  async processSubrogationWorkflowAction(request, reply) {
+    try {
+      const { subId } = request.params;
+      const { action, ...data } = request.body || {};
+      const VALID = ['check', 'approve', 'revise'];
+      if (!VALID.includes(action)) {
+        return sendError(reply, new Error(`action must be one of: ${VALID.join(', ')}`), 400);
+      }
+      const auditActor = this.entityService.resolveAuditActor({ user: request.user });
+      const notaNumber = await ClaimService.processSubrogationWorkflow(subId, action, data, auditActor);
+      return sendSuccess(reply, { subrogation_id: subId, notaNumber: notaNumber || null }, `Subrogation ${action} complete`);
+    } catch (error) {
+      return sendError(reply, error, 500);
+    }
+  }
+
+  async getClaimReviewContext(request, reply) {
+    try {
+      const context = await ClaimService.getClaimReviewContext();
+      return sendSuccess(reply, context, 'Context loaded');
+    } catch (error) {
+      return sendError(reply, error, 500);
+    }
+  }
+
+  // ── Nota extras ───────────────────────────────────────────────────────────
+
+  async getNotaContext(request, reply) {
+    try {
+      const context = await NotaService.getNotaContext();
+      return sendSuccess(reply, context, 'Context loaded');
+    } catch (error) {
+      return sendError(reply, error, 500);
+    }
+  }
+
+  async recordNotaPayment(request, reply) {
+    try {
+      const { notaId } = request.params;
+      const userEmail = request.user?.email || 'system';
+      const paymentRef = await NotaService.recordNotaPayment(notaId, { ...request.body, userEmail });
+      return sendSuccess(reply, { payment_ref: paymentRef }, 'Payment recorded');
+    } catch (error) {
+      return sendError(reply, error, 500);
     }
   }
 }

@@ -136,5 +136,69 @@ export default async function (fastify) {
     { preHandler: fastify.authenticate },
     controller.processClaimWorkflowAction.bind(controller)
   );
+
+  // ── Debtor aggregates ──────────────────────────────────────────────────────
+  fastify.get(
+    '/apps/:appId/debtors/status-counts',
+    { preHandler: fastify.authenticate },
+    controller.getDebtorStatusCounts.bind(controller)
+  );
+
+  fastify.get(
+    '/apps/:appId/debtors/batch-summary/:batchId',
+    { preHandler: fastify.authenticate },
+    controller.getDebtorBatchSummary.bind(controller)
+  );
+
+  fastify.post(
+    '/apps/:appId/debtors/batch-workflow-action',
+    { preHandler: fastify.authenticate },
+    controller.batchDebtorWorkflowAction.bind(controller)
+  );
+
+  // ── Master Contract extras ─────────────────────────────────────────────────
+  fastify.post(
+    '/apps/:appId/master-contracts/:contractId/close-or-invalidate',
+    { preHandler: fastify.authenticate },
+    controller.closeMasterContract.bind(controller)
+  );
+
+  // ── Claim extras ───────────────────────────────────────────────────────────
+  fastify.get(
+    '/apps/:appId/claims/next-sequence',
+    { preHandler: fastify.authenticate },
+    controller.getNextClaimSequence.bind(controller)
+  );
+
+  fastify.post(
+    '/apps/:appId/subrogations',
+    { preHandler: fastify.authenticate },
+    controller.createSubrogation.bind(controller)
+  );
+
+  fastify.post(
+    '/apps/:appId/subrogations/:subId/workflow-action',
+    { preHandler: fastify.authenticate },
+    controller.processSubrogationWorkflowAction.bind(controller)
+  );
+
+  fastify.get(
+    '/apps/:appId/claim-review/context',
+    { preHandler: fastify.authenticate },
+    controller.getClaimReviewContext.bind(controller)
+  );
+
+  // ── Nota extras ────────────────────────────────────────────────────────────
+  fastify.get(
+    '/apps/:appId/nota/context',
+    { preHandler: fastify.authenticate },
+    controller.getNotaContext.bind(controller)
+  );
+
+  fastify.post(
+    '/apps/:appId/notas/:notaId/record-payment',
+    { preHandler: fastify.authenticate },
+    controller.recordNotaPayment.bind(controller)
+  );
 }
 

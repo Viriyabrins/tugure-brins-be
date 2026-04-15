@@ -327,8 +327,160 @@ export async function processDebtorRevision(debtorId, remarks = '', auditActor =
   }
 }
 
+/**
+ * Get aggregated status counts for the debtor review dashboard.
+ * Replaces 5 separate paginated HTTP calls from the frontend.
+ */
+export async function getStatusCounts() {
+  const [approvedBrins, checkedTugure, approved, revision] = await Promise.all([
+    prisma.debtor.count({ where: { status: 'APPROVED_BRINS' } }),
+    prisma.debtor.count({ where: { status: 'CHECKED_TUGURE' } }),
+    prisma.debtor.count({ where: { status: 'APPROVED' } }),
+    prisma.debtor.count({ where: { status: 'REVISION' } }),
+  ]);
+  const plafondAgg = await prisma.debtor.aggregate({
+    _sum: { plafon: true },
+    where: { status: 'APPROVED' },
+  });
+  return {
+    pending: approvedBrins,
+    checkedTugure,
+    approved,
+    revision,
+    totalPlafond: parseFloat(plafondAgg._sum.plafon) || 0,
+  };
+}
+
+/**
+ * Get aggregate financial summary for a batch.
+ * Replaces fetching all debtor rows + client-side reduce.
+ */
+export async function getBatchSummary(batchId) {
+  const agg = await prisma.debtor.aggregate({
+    _sum: { net_premi: true, ric_amount: true, plafon: true, nominal_premi: true },
+    _count: { id: true },
+    where: { batch_id: batchId },
+  });
+  const first = await prisma.debtor.findFirst({
+    where: { batch_id: batchId },
+    select: { contract_id: true },
+  });
+  return {
+    totalNetPremi: parseFloat(agg._sum.net_premi) || 0,
+    totalKomisi: parseFloat(agg._sum.ric_amount) || 0,
+    totalPlafon: parseFloat(agg._sum.plafon) || 0,
+    totalNominalPremi: parseFloat(agg._sum.nominal_premi) || 0,
+    count: agg._count.id || 0,
+    batchId,
+    contractId: first?.contract_id || '-',
+  };
+}
+
+/**
+ * Process a list of debtor IDs through a Tugure-side workflow action.
+ * action: 'check'  (APPROVED_BRINS → CHECKED_TUGURE)
+ *       | 'approve' (CHECKED_TUGURE → APPROVED, creates Nota)
+ *       | 'revise'  (CHECKED_TUGURE → REVISION)
+ * Replaces N sequential backend.update calls on the frontend.
+ */
+export async function processBatchDebtorWorkflowAction(debtorIds, action, remarks = '', auditActor = {}) {
+  let processedCount = 0;
+  let failedCount = 0;
+  const errors = [];
+  let batchId = null;
+  let contractId = null;
+  let totalNetPremi = 0;
+
+  for (const debtorId of debtorIds) {
+    try {
+      let result;
+      if (action === 'check') {
+        result = await processDebtorCheck(debtorId, auditActor, { emitNotification: false });
+      } else if (action === 'approve') {
+        const debtor = await prisma.debtor.findUnique({
+          where: { id: debtorId },
+          select: { batch_id: true, contract_id: true, net_premi: true },
+        });
+        if (debtor) {
+          batchId = batchId || debtor.batch_id;
+          contractId = contractId || debtor.contract_id;
+          totalNetPremi += parseFloat(debtor.net_premi) || 0;
+        }
+        result = await processDebtorApproval(debtorId, remarks, auditActor, null, { emitNotification: false });
+      } else if (action === 'revise') {
+        result = await processDebtorRevision(debtorId, remarks, auditActor, { emitNotification: false });
+      } else {
+        throw new Error(`Unknown action: ${action}`);
+      }
+      if (result.success) processedCount++;
+      else { failedCount++; errors.push({ debtorId, error: result.error }); }
+    } catch (err) {
+      failedCount++;
+      errors.push({ debtorId, error: err.message });
+    }
+  }
+
+  // Create single batch-level Nota on Tugure final approval
+  if (action === 'approve' && processedCount > 0 && batchId && contractId) {
+    try {
+      const batchData = await prisma.batch.findUnique({ where: { batch_id: batchId } });
+      const existing = await prisma.nota.findFirst({ where: { reference_id: batchId, nota_type: 'Batch' } });
+      if (!existing) {
+        await prisma.nota.create({
+          data: {
+            nota_number: `NOTA-${contractId}-${Date.now()}`,
+            nota_type: 'Batch',
+            reference_id: batchId,
+            contract_id: contractId,
+            amount: totalNetPremi,
+            currency: 'IDR',
+            status: 'UNPAID',
+            issued_by: auditActor.user_email || 'system',
+            issued_date: new Date(),
+            total_actual_paid: 0,
+            reconciliation_status: 'PENDING',
+            premium: parseFloat(batchData?.premium) || 0,
+            commission: parseFloat(batchData?.commission) || 0,
+            claim: parseFloat(batchData?.claim) || 0,
+            total: parseFloat(batchData?.total) || 0,
+            net_due: parseFloat(batchData?.net_due) || 0,
+          },
+        });
+      }
+    } catch (notaErr) {
+      console.warn('Failed to create Nota for batch:', notaErr);
+    }
+  }
+
+  // Single batch-level notification
+  if (processedCount > 0) {
+    const titleMap = { check: 'Checked by Tugure', approve: 'Approved (Final)', revise: 'Marked for Revision' };
+    try {
+      for (const role of ALL_ROLES) {
+        await prisma.notification.create({
+          data: {
+            title: `Debtors ${titleMap[action] || action}`,
+            message: `${auditActor.user_email || 'system'} performed ${action} on ${processedCount} debtor(s).`,
+            type: action === 'revise' ? 'WARNING' : 'INFO',
+            module: 'DEBTOR',
+            reference_id: batchId || debtorIds[0],
+            target_role: role,
+          },
+        });
+      }
+    } catch (notifErr) {
+      console.warn('Failed to create batch notification:', notifErr);
+    }
+  }
+
+  return { processedCount, failedCount, errors };
+}
+
 export default {
   processDebtorCheck,
   processDebtorApproval,
   processDebtorRevision,
+  getStatusCounts,
+  getBatchSummary,
+  processBatchDebtorWorkflowAction,
 };
