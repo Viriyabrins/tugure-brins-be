@@ -67,20 +67,21 @@ const config = {
       return null;
     }
   })(),
-  frontendUrl: process.env.FRONTEND_URL || process.env.VITE_KEYCLOAK_REDIRECT_URI || 'http://localhost:5173/Dashboard',
+  frontendUrl: process.env.FRONTEND_URL || process.env.VITE_KEYCLOAK_REDIRECT_URI ,
   smtp: {
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: Number(process.env.SMTP_PORT) || 587,
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT),
     secure: process.env.SMTP_SECURE === 'true',
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
-    fromName: process.env.SMTP_FROM_NAME || 'Tugure BRINS System',
+    fromName: process.env.SMTP_FROM_NAME,
   },
   minio: {
     endpoint: process.env.MINIO_ENDPOINT,
     accessKey: process.env.MINIO_ACCESS_KEY,
     secretKey: process.env.MINIO_SECRET_KEY,
-    bucket: process.env.MINIO_BUCKET || 'brins',
+    bucket: process.env.MINIO_BUCKET,
+    region: process.env.AWS_REGION,
   },
   // Signature validation (HMAC-SHA256)
   // SIGNATURE_TOLERANCE_MS / SIGNATURE_MAX_AGE_MS: expiry window in ms (default 5 seconds)

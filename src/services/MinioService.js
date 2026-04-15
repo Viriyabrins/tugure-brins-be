@@ -10,23 +10,31 @@ class MinioService {
   }
 
   _init() {
-    const { endpoint, accessKey, secretKey, bucket } = config.minio;
+    const { endpoint, accessKey, secretKey, bucket, region } = config.minio;
 
-    if (!endpoint || !accessKey || !secretKey || !bucket) {
+    // MinIO (custom endpoint) doesn't require a real AWS region — default to us-east-1 as a placeholder.
+    // AWS S3 (no endpoint) requires a real region to route requests correctly.
+    const effectiveRegion = region || (endpoint ? 'us-east-1' : null);
+
+    if (!bucket || !effectiveRegion) {
       console.warn('[MinioService] MinIO configuration incomplete – S3 operations will fail.');
       return;
     }
 
-    this.bucket = bucket;
-    this.s3Client = new S3Client({
-      region: 'us-east-1',
-      endpoint,
-      credentials: {
+    // MinIO (dev): requires custom endpoint + explicit credentials + path-style
+    // AWS S3 (prod): only needs region; SDK uses IAM role from EC2 instance metadata
+    const s3Options = { region: effectiveRegion };
+    if (endpoint) {
+      s3Options.endpoint = endpoint;
+      s3Options.forcePathStyle = true;
+      s3Options.credentials = {
         accessKeyId: accessKey,
         secretAccessKey: secretKey,
-      },
-      forcePathStyle: true,
-    });
+      };
+    }
+
+    this.bucket = bucket;
+    this.s3Client = new S3Client(s3Options);
 
     console.log('[MinioService] MinIO S3 client initialized ✓');
   }
@@ -107,7 +115,7 @@ class MinioService {
    */
   async listFiles(recordId, batchId) {
     if (!this.s3Client) {
-      throw new Error('MinIO service not configured');
+      return [];
     }
 
     try {
