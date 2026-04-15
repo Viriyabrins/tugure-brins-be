@@ -1,100 +1,241 @@
+import https from 'https';
+import { URL } from 'url';
 import { sendSuccess, sendError } from '../utils/response.js';
 import emailService from '../services/EmailService.js';
 import config from '../config/index.js';
 
 /**
- * Get a Keycloak Admin API access token using client credentials grant.
- * Uses the BRINS realm client as the system service account for email operations.
+ * Helper: Make HTTPS requests with SSL validation disabled for self-signed certs
  */
-async function getKeycloakAdminToken() {
-  const realm = config.keycloakRealmBrins;
-  const clientId = config.keycloakClientIdBrins;
-  const clientSecret = config.keycloakClientSecretBrins;
+function httpsRequest(options) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          resolve({
+            status: res.statusCode,
+            statusText: res.statusMessage,
+            data: data ? JSON.parse(data) : null,
+            text: data,
+          });
+        } catch (e) {
+          resolve({
+            status: res.statusCode,
+            statusText: res.statusMessage,
+            data: null,
+            text: data,
+          });
+        }
+      });
+    });
 
-  if (!config.keycloakUrl || !realm || !clientId || !clientSecret) {
-    throw new Error('Keycloak admin credentials not configured (BRINS realm)');
+    req.on('error', reject);
+    if (options.body) req.write(options.body);
+    req.end();
+  });
+}
+
+/**
+ * Get a Keycloak Admin API access token using client credentials grant.
+ * Supports both BRINS and TUGURE realms.
+ * @param {'brins'|'tugure'} realm - The target realm
+ */
+async function getKeycloakAdminToken(realm = 'brins') {
+  const requestId = `KCTOKEN_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const isTugure = realm === 'tugure';
+  const realmName = isTugure ? config.keycloakRealmTugure : config.keycloakRealmBrins;
+  const clientId = isTugure ? config.keycloakClientIdTugure : config.keycloakClientIdBrins;
+  const clientSecret = isTugure ? config.keycloakClientSecretTugure : config.keycloakClientSecretBrins;
+
+  console.log(`[${requestId}][KeycloakToken] ════════════════════════════════════════`);
+  console.log(`[${requestId}][KeycloakToken] Token Request Initiated`);
+  console.log(`[${requestId}][KeycloakToken] Target Realm: "${realm}" (isTugure: ${isTugure})`);
+  console.log(`[${requestId}][KeycloakToken] Configuration Check:`, {
+    keycloakUrl: config.keycloakUrl ? `✓ Set (${config.keycloakUrl.substring(0, 30)}...)` : '✗ Missing',
+    realmName: realmName ? `✓ "${realmName}"` : '✗ Missing',
+    clientId: clientId ? `✓ "${clientId.substring(0, 20)}..."` : '✗ Missing',
+    clientSecret: clientSecret ? `✓ Length: ${clientSecret.length}` : '✗ Missing',
+  });
+
+  if (!config.keycloakUrl || !realmName || !clientId || !clientSecret) {
+    console.error(`[${requestId}][KeycloakToken] ✗ Configuration incomplete. Cannot proceed.`);
+    throw new Error(`Keycloak admin credentials not configured (${realm} realm)`);
   }
 
-  const tokenUrl = `${config.keycloakUrl.replace(/\/$/, '')}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/token`;
+  const tokenUrl = `${config.keycloakUrl.replace(/\/$/, '')}/realms/${encodeURIComponent(realmName)}/protocol/openid-connect/token`;
+  console.log(`[${requestId}][KeycloakToken] Token URL: ${tokenUrl}`);
+  
   const bodyParams = new URLSearchParams({
     grant_type: 'client_credentials',
     client_id: clientId,
     client_secret: clientSecret,
   });
-
-  const res = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: bodyParams,
+  
+  console.log(`[${requestId}][KeycloakToken] Request Body Params:`, {
+    grant_type: 'client_credentials',
+    client_id: `${clientId.substring(0, 15)}...`,
+    client_secret: `(masked, length: ${clientSecret.length})`,
   });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Keycloak token request failed (${res.status}): ${text}`);
+  
+  console.log(`[${requestId}][KeycloakToken] Sending POST request to Keycloak...`);
+  
+  const bodyStr = bodyParams.toString();
+  const parsedUrl = new URL(tokenUrl);
+  
+  let res;
+  try {
+    res = await httpsRequest({
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port,
+      path: parsedUrl.pathname + (parsedUrl.search || ''),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(bodyStr),
+      },
+      rejectUnauthorized: false,
+      body: bodyStr,
+    });
+  } catch (err) {
+    console.error(`[${requestId}][KeycloakToken] ✗ Request error:`, err.message);
+    throw err;
   }
 
-  const data = await res.json();
-  console.log('[Email] Keycloak admin access_token acquired (masked)');
+  console.log(`[${requestId}][KeycloakToken] Response Status: ${res.status} ${res.statusText}`);
+  
+  if (res.status !== 200) {
+    console.error(`[${requestId}][KeycloakToken] ✗ Token Request Failed`);
+    console.error(`[${requestId}][KeycloakToken] Response Body:`, res.text.substring(0, 500));
+    console.log(`[${requestId}][KeycloakToken] ════════════════════════════════════════\n`);
+    throw new Error(`Keycloak token request failed for ${realm} (${res.status})`);
+  }
+
+  const data = res.data;
+  const tokenType = data.token_type || 'Bearer';
+  const tokenLength = (data.access_token || '').length;
+  const expiresIn = data.expires_in || 'unknown';
+  
+  console.log(`[${requestId}][KeycloakToken] ✓ Token Acquired Successfully`);
+  console.log(`[${requestId}][KeycloakToken] Token Details:`, {
+    type: tokenType,
+    length: tokenLength,
+    expiresIn: expiresIn,
+    scope: data.scope || 'N/A',
+  });
+  console.log(`[${requestId}][KeycloakToken] Token Value (first 50 chars): ${data.access_token.substring(0, 50)}...`);
+  console.log(`[${requestId}][KeycloakToken] ════════════════════════════════════════\n`);
+  
   return data.access_token;
 }
 
 /**
- * Fetch all users in a Keycloak group by group name.
- * 1. GET /admin/realms/{realm}/groups → find group by name → get its id
- * 2. GET /admin/realms/{realm}/groups/{groupId}/members → get users
+ * Fetch all users assigned to a specific client role in the given Keycloak realm.
+ * 1. GET /admin/realms/{realm}/clients?clientId={clientId} → find client UUID
+ * 2. GET /admin/realms/{realm}/clients/{clientUUID}/roles/{roleName}/users → get users
+ *
+ * @param {'brins'|'tugure'} realm - The target realm
+ * @param {string} roleName - The client role name (e.g. 'maker-brins-role', 'tugure-checker-role')
+ * @returns {Promise<Array<{email: string, name: string}>>}
  */
-async function getUsersByGroup(groupName) {
+async function getUsersByRole(realm, roleName) {
+  const requestId = `USERSBYROLE_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  console.log(`[${requestId}][UsersByRole] ════════════════════════════════════════`);
+  console.log(`[${requestId}][UsersByRole] Get Users by Role Request`);
+  console.log(`[${requestId}][UsersByRole] Realm: "${realm}", Role: "${roleName}"`);
+  
   let adminToken;
   try {
-    adminToken = await getKeycloakAdminToken();
+    console.log(`[${requestId}][UsersByRole] Step 1: Acquiring Keycloak admin token...`);
+    adminToken = await getKeycloakAdminToken(realm);
+    console.log(`[${requestId}][UsersByRole] ✓ Admin token acquired (length: ${adminToken.length})`);
   } catch (err) {
-    console.warn('[Email] Could not obtain Keycloak admin token, skipping group lookup:', err.message);
+    console.error(`[${requestId}][UsersByRole] ✗ Failed to obtain Keycloak admin token:`, err.message);
+    console.log(`[${requestId}][UsersByRole] ════════════════════════════════════════\n`);
     return [];
   }
+
+  const isTugure = realm === 'tugure';
   const baseUrl = config.keycloakUrl.replace(/\/$/, '');
-  const realm = encodeURIComponent(config.keycloakRealmBrins);
+  const realmName = encodeURIComponent(isTugure ? config.keycloakRealmTugure : config.keycloakRealmBrins);
+  const clientIdString = isTugure ? config.keycloakClientIdTugure : config.keycloakClientIdBrins;
 
-  // Step 1: Find the group by name
-  const groupsUrl = `${baseUrl}/admin/realms/${realm}/groups?search=${encodeURIComponent(groupName)}`;
-  console.log(`[Email] Fetching groups from: ${groupsUrl}`);
+  // Step 1: Find the client UUID by clientId string
+  const clientsUrl = `${baseUrl}/admin/realms/${realmName}/clients?clientId=${encodeURIComponent(clientIdString)}`;
+  console.log(`[${requestId}][UsersByRole] Step 2: Looking up client UUID for "${clientIdString}"`);
+  console.log(`[${requestId}][UsersByRole] Clients URL: ${clientsUrl}`);
+  console.log(`[${requestId}][UsersByRole] Authorization Header: Bearer ${adminToken.substring(0, 30)}...`);
 
-  const groupsRes = await fetch(groupsUrl, {
-    headers: { Authorization: `bearer ${adminToken}` },
-  });
-
-  if (!groupsRes.ok) {
-    const text = await groupsRes.text();
-    console.error(`[Email] Failed to fetch groups (${groupsRes.status}):`, text);
+  let clientsRes;
+  try {
+    const parsedUrl = new URL(clientsUrl);
+    clientsRes = await httpsRequest({
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port,
+      path: parsedUrl.pathname + (parsedUrl.search || ''),
+      method: 'GET',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      rejectUnauthorized: false,
+    });
+  } catch (err) {
+    console.error(`[${requestId}][UsersByRole] ✗ Failed to fetch clients:`, err.message);
+    console.log(`[${requestId}][UsersByRole] ════════════════════════════════════════\n`);
     return [];
   }
 
-  const groups = await groupsRes.json();
-  console.log(`[Email] Groups found:`, groups.map(g => ({ id: g.id, name: g.name })));
+  console.log(`[${requestId}][UsersByRole] Clients Response Status: ${clientsRes.status} ${clientsRes.statusText}`);
 
-  // Find exact match (search is partial, so we need to filter)
-  const group = groups.find(g => g.name === groupName);
-  if (!group) {
-    console.warn(`[Email] No group found with name "${groupName}"`);
+  if (clientsRes.status !== 200) {
+    console.error(`[${requestId}][UsersByRole] ✗ Failed to fetch clients (${clientsRes.status}):`);
+    console.error(`[${requestId}][UsersByRole] Response Body:`, clientsRes.text.substring(0, 500));
+    console.log(`[${requestId}][UsersByRole] ════════════════════════════════════════\n`);
     return [];
   }
 
-  console.log(`[Email] Found group "${groupName}" with id: ${group.id}`);
-
-  // Step 2: Get members of the group
-  const membersUrl = `${baseUrl}/admin/realms/${realm}/groups/${group.id}/members?max=200`;
-  console.log(`[Email] Fetching group members from: ${membersUrl}`);
-
-  const membersRes = await fetch(membersUrl, {
-    headers: { Authorization: `Bearer ${adminToken}` },
-  });
-
-  if (!membersRes.ok) {
-    const text = await membersRes.text();
-    console.error(`[Email] Failed to fetch group members (${membersRes.status}):`, text);
+  const clients = clientsRes.data;
+  if (!clients || clients.length === 0) {
+    console.warn(`[${requestId}][UsersByRole] ✗ No client found with clientId "${clientIdString}" in realm "${realm}"`);
+    console.log(`[${requestId}][UsersByRole] ════════════════════════════════════════\n`);
     return [];
   }
 
-  const members = await membersRes.json();
+  const clientUUID = clients[0].id;
+  console.log(`[${requestId}][UsersByRole] ✓ Found client UUID: ${clientUUID}`);
+
+  // Step 2: Fetch users assigned to the role
+  const roleUsersUrl = `${baseUrl}/admin/realms/${realmName}/clients/${clientUUID}/roles/${encodeURIComponent(roleName)}/users?max=200`;
+  console.log(`[${requestId}][UsersByRole] Step 3: Fetching users with role "${roleName}"`);
+  console.log(`[${requestId}][UsersByRole] Role Users URL: ${roleUsersUrl}`);
+
+  let roleUsersRes;
+  try {
+    const parsedUrl = new URL(roleUsersUrl);
+    roleUsersRes = await httpsRequest({
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port,
+      path: parsedUrl.pathname + (parsedUrl.search || ''),
+      method: 'GET',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      rejectUnauthorized: false,
+    });
+  } catch (err) {
+    console.error(`[${requestId}][UsersByRole] ✗ Failed to fetch role users:`, err.message);
+    console.log(`[${requestId}][UsersByRole] ════════════════════════════════════════\n`);
+    return [];
+  }
+
+  console.log(`[${requestId}][UsersByRole] Role Users Response Status: ${roleUsersRes.status} ${roleUsersRes.statusText}`);
+
+  if (roleUsersRes.status !== 200) {
+    console.error(`[${requestId}][UsersByRole] ✗ Failed to fetch role users (${roleUsersRes.status}):`);
+    console.error(`[${requestId}][UsersByRole] Response Body:`, roleUsersRes.text.substring(0, 500));
+    console.log(`[${requestId}][UsersByRole] ════════════════════════════════════════\n`);
+    return [];
+  }
+
+  const members = roleUsersRes.data;
   const users = (members || [])
     .filter(u => u.email)
     .map(u => ({
@@ -102,31 +243,40 @@ async function getUsersByGroup(groupName) {
       name: u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : u.username,
     }));
 
-  console.log(`[Email] Group "${groupName}" has ${users.length} member(s) with emails:`, users.map(u => u.email));
+  console.log(`[${requestId}][UsersByRole] ✓ Retrieved ${members.length} total member(s), ${users.length} with email(s)`);
+  users.forEach((u, idx) => {
+    console.log(`[${requestId}][UsersByRole]   [${idx + 1}] ${u.email} (${u.name})`);
+  });
+  console.log(`[${requestId}][UsersByRole] ════════════════════════════════════════\n`);
+  
   return users;
 }
 
 export default async function (fastify) {
   /**
-   * GET /api/users-by-group/:groupName
-   * Returns all users in the given Keycloak group, with their emails.
+   * GET /api/users-by-role/:realm/:roleName
+   * Returns all users assigned to the given client role in the specified realm.
    */
   fastify.get(
-    '/users-by-group/:groupName',
+    '/users-by-role/:realm/:roleName',
     { preHandler: fastify.authenticate },
     async (request, reply) => {
-      const { groupName } = request.params;
+      const { realm, roleName } = request.params;
 
-      if (!groupName) {
-        return sendError(reply, { message: 'groupName parameter is required' }, 400);
+      if (!realm || !roleName) {
+        return sendError(reply, { message: 'realm and roleName parameters are required' }, 400);
+      }
+
+      if (realm !== 'brins' && realm !== 'tugure') {
+        return sendError(reply, { message: 'realm must be "brins" or "tugure"' }, 400);
       }
 
       try {
-        const users = await getUsersByGroup(groupName);
-        return sendSuccess(reply, users, `Found ${users.length} users in group "${groupName}"`);
+        const users = await getUsersByRole(realm, roleName);
+        return sendSuccess(reply, users, `Found ${users.length} users with role "${roleName}" in realm "${realm}"`);
       } catch (error) {
-        fastify.log.error({ groupName, error: error.message }, 'Failed to get users by group');
-        return sendError(reply, { message: `Failed to get users by group: ${error.message}` }, 500);
+        fastify.log.error({ realm, roleName, error: error.message }, 'Failed to get users by role');
+        return sendError(reply, { message: `Failed to get users by role: ${error.message}` }, 500);
       }
     }
   );
