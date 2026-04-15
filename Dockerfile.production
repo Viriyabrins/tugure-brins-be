@@ -1,10 +1,10 @@
-# Staging Dockerfile
+# Production Dockerfile
 FROM node:24-bullseye-slim
 
 WORKDIR /app
 
-# Set environment for staging
-ENV NODE_ENV=staging
+# Set environment for production
+ENV NODE_ENV=production
 
 # Allow overriding UID/GID to match host users (useful for bind mounts)
 ARG APP_UID=1000
@@ -85,4 +85,4 @@ ENV HOST=0.0.0.0
 # Run as non-root user by default (works better with rootless Podman)
 USER ${APP_UID}:${APP_GID}
 # Default command (can be overridden by docker run args)
-CMD ["npm", "run", "production"]
+CMD ["npm", "run", "start"]

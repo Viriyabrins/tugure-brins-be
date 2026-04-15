@@ -32,10 +32,10 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: Dockerfile.staging
+          file: Dockerfile.production
           push: true
           tags: |
-            ghcr.io/viriyabrins/brins-be:staging-latest
+            ghcr.io/viriyabrins/brins-be:production-latest
             
       - name: Save pushed image digest
         run: |
@@ -44,58 +44,58 @@ jobs:
       - name: Upload image digest artifact
         uses: actions/upload-artifact@v4
         with:
-          name: staging-image-digest
+          name: production-image-digest
           path: image-digest.txt
 
       - name: Pull pushed image (for export)
         run: |
           echo "Pulling image for packaging...";
-          docker pull ghcr.io/viriyabrins/brins-be:staging-latest
+          docker pull ghcr.io/viriyabrins/brins-be:production-latest
       - name: Save image tarball
         run: |
-          docker save ghcr.io/viriyabrins/brins-be:staging-latest | gzip > image-staging-latest.tar.gz
+          docker save ghcr.io/viriyabrins/brins-be:production-latest | gzip > image-production-latest.tar.gz
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
         with:
-          name: staging-image
-          path: image-staging-latest.tar.gz
+          name: production-image
+          path: image-production-latest.tar.gz
   deploy-to-podman:
       needs: build-and-publish
-      runs-on: crp-be
+      runs-on: ubuntu-latest
       if: success()
       steps:
         - name: Deploy to remote Podman host as brins
           env:
-            IMAGE: ghcr.io/viriyabrins/brins-be:staging-latest
+            IMAGE: ghcr.io/viriyabrins/brins-be:production-latest
             GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
             GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-            SSH_HOST: ${{ secrets.SSH_HOST }}
-            SSH_USER: ${{ secrets.SSH_USER }}
-            SSH_PORT: ${{ secrets.SSH_PORT }}
+            SSH_HOST_PROD: ${{ secrets.SSH_HOST_PROD }}
+            SSH_USER_PROD: ${{ secrets.SSH_USER_PROD }}
+            SSH_PORT_PROD: ${{ secrets.SSH_PORT_PROD }}
             SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-            STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+            PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
           run: |
             set -euo pipefail
 
-            if [ -z "${SSH_HOST:-}" ] || [ -z "${SSH_USER:-}" ] || [ -z "${SSH_PRIVATE_KEY:-}" ]; then
-              echo "Missing SSH_HOST, SSH_USER or SSH_PRIVATE_KEY secrets"
+            if [ -z "${SSH_HOST_PROD:-}" ] || [ -z "${SSH_USER_PROD:-}" ] || [ -z "${SSH_PORT_PROD:-}" ] || [ -z "${SSH_PRIVATE_KEY:-}" ]; then
+              echo "Missing SSH_HOST_PROD, SSH_USER_PROD, SSH_PORT_PROD or SSH_PRIVATE_KEY secrets"
               exit 1
             fi
 
-            SSH_PORT=${SSH_PORT:-22}
+            SSH_PORT=${SSH_PORT_PROD:-22}
 
-            echo "Deploying ${IMAGE} to ${SSH_USER}@${SSH_HOST}:${SSH_PORT} using private key auth"
+            echo "Deploying ${IMAGE} to ${SSH_USER_PROD}@${SSH_HOST_PROD}:${SSH_PORT} using private key auth"
 
             mkdir -p ~/.ssh
             echo "${SSH_PRIVATE_KEY}" > ~/.ssh/deploy_key
             chmod 600 ~/.ssh/deploy_key
 
-            ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" 'bash -s' -- "${IMAGE}" "${GHCR_USERNAME}" "${GHCR_TOKEN}" "${STAGING_DATABASE_URL}" <<'REMOTE'
+            ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -p "${SSH_PORT}" "${SSH_USER_PROD}@${SSH_HOST_PROD}" 'bash -s' -- "${IMAGE}" "${GHCR_USERNAME}" "${GHCR_TOKEN}" "${PRODUCTION_DATABASE_URL}" <<'REMOTE'
             set -euo pipefail
             IMAGE="$1"
             GHCR_USER="$2"
             GHCR_TOKEN="$3"
-            STAGING_DATABASE_URL="$4"
+            PRODUCTION_DATABASE_URL="$4"
 
             echo "Logging into GHCR as ${GHCR_USER}"
             printf '%s' "${GHCR_TOKEN}" | podman login ghcr.io --username "${GHCR_USER}" --password-stdin
@@ -103,32 +103,26 @@ jobs:
             echo "Pulling image ${IMAGE}"
             podman pull "${IMAGE}"
 
-            # Prepare host directories (no host app dir needed; containers manage app files)
-            BACKUP_DIR=/home/brins/backups
-            mkdir -p "${BACKUP_DIR}"
-
             # Backup existing container
             TIMESTAMP=$(date +%Y%m%d%H%M%S)
-            OLD=$(podman ps -a -q -f name=^brins-be-staging$ || true)
+            OLD=$(podman ps -a -q -f name=^brins-be-production$ || true)
             if [ -n "${OLD}" ]; then
-              echo "Found existing brins-be-staging container, backing up (fixed name)..."
-              podman stop brins-be-staging || true
-              BACKUP_IMAGE=brins-be-staging:backup
-              podman commit brins-be-staging "${BACKUP_IMAGE}" || true
-              podman tag "${BACKUP_IMAGE}" brins-be-staging:previous || true
-              # Save backup tar for off-host retention (overwrite previous)
-              podman save -o "${BACKUP_DIR}/brins-be-staging-backup-${TIMESTAMP}.tar" "${BACKUP_IMAGE}" || true
+              echo "Found existing brins-be-production container, backing up (fixed name)..."
+              podman stop brins-be-production || true
+              BACKUP_IMAGE=brins-be-production:backup
+              podman commit brins-be-production "${BACKUP_IMAGE}" || true
+              podman tag "${BACKUP_IMAGE}" brins-be-production:previous || true
               # Remove any existing fixed-name backup container then create stopped backup container for visibility
-              BACKUP_CONTAINER="brins-be-staging-backup"
+              BACKUP_CONTAINER="brins-be-production-backup"
               podman rm -f "${BACKUP_CONTAINER}" >/dev/null 2>&1 || true
               podman create --name "${BACKUP_CONTAINER}" "${BACKUP_IMAGE}" >/dev/null 2>&1 || true
               # Show images and containers for visibility
-              podman images --filter reference=brins-be-staging* || true
+              podman images --filter reference=brins-be-production* || true
               podman ps -a --filter name=^${BACKUP_CONTAINER}$ || true
-              podman rm brins-be-staging || true
+              podman rm brins-be-production || true
             fi
 
-            echo "Starting new brins-be-staging container from ${IMAGE}"
+            echo "Starting new brins-be-production container from ${IMAGE}"
             # Ensure latest image is available
             podman pull "${IMAGE}" || true
 
@@ -138,18 +132,18 @@ jobs:
 
             # Deploy relies on the container entrypoint to run migrations at startup when DATABASE_URL is provided
             echo "Migrations will be executed by the container entrypoint if DATABASE_URL is set."
-            podman rm -f brins-be-staging >/dev/null 2>&1 || true
+            podman rm -f brins-be-production >/dev/null 2>&1 || true
             # Start container with DATABASE_URL if provided so the container entrypoint can run migrations
-            if [ -n "${STAGING_DATABASE_URL:-}" ]; then
-              podman run -d --name brins-be-staging --restart=always -e DATABASE_URL="${STAGING_DATABASE_URL}" -p 10011:10011 "${IMAGE}"
+            if [ -n "${PRODUCTION_DATABASE_URL:-}" ]; then
+              podman run -d --name brins-be-production --restart=always -e DATABASE_URL="${PRODUCTION_DATABASE_URL}" -p 10011:10011 "${IMAGE}"
             else
-              podman run -d --name brins-be-staging --restart=always -p 10011:10011 "${IMAGE}"
+              podman run -d --name brins-be-production --restart=always -p 10011:10011 "${IMAGE}"
             fi
 
             # No host-mounted uploads directory required for this deployment
 
             sleep 2
-            podman ps -a --filter name=^brins-be-staging$
+            podman ps -a --filter name=^brins-be-production$
 
             echo "Deploy complete"
             REMOTE
