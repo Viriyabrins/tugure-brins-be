@@ -112,4 +112,29 @@ export default async function (fastify) {
     { preHandler: fastify.authenticate },
     controller.getDebtorJobStatus.bind(controller)
   );
+
+  /**
+   * Master Contract workflow-action endpoint
+   * Handles: CHECK_BRINS, APPROVE_BRINS, CHECK_TUGURE, APPROVE, REVISION
+   * POST /api/apps/:appId/master-contracts/:contractId/workflow-action
+   * Body: { action: string, remarks?: string }
+   */
+  fastify.post(
+    '/apps/:appId/master-contracts/:contractId/workflow-action',
+    { preHandler: fastify.authenticate },
+    controller.processMasterContractWorkflowAction.bind(controller)
+  );
+
+  /**
+   * Claim workflow-action endpoint
+   * Handles: CHECK_BRINS, APPROVE_BRINS, CHECK_TUGURE, APPROVE, REVISION
+   * POST /api/apps/:appId/claims/:claimNo/workflow-action
+   * Body: { action: string, remarks?: string }
+   */
+  fastify.post(
+    '/apps/:appId/claims/:claimNo/workflow-action',
+    { preHandler: fastify.authenticate },
+    controller.processClaimWorkflowAction.bind(controller)
+  );
 }
+

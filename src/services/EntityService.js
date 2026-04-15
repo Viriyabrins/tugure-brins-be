@@ -666,6 +666,10 @@ export default class EntityService {
             row.contract_no = `${baseContractNo}_V1_${timestamp}`;
           }
 
+          // Set uploaded_by and uploaded_date for all contracts (both new and revise modes)
+          row.uploaded_by = actor.user_email;
+          row.uploaded_date = new Date();
+
           try {
             const created = await tx.masterContract.create({ data: row });
             createdContracts.push(created);
@@ -803,6 +807,149 @@ export default class EntityService {
       });
     } catch (error) {
       throw this.buildReadableError(error, 'Contract approval process failed.');
+    }
+  }
+
+  /**
+   * Handle any MC workflow transition.
+   * Actions: CHECK_BRINS, APPROVE_BRINS, CHECK_TUGURE, APPROVE, REVISION
+   * Updates status_approval and stores actor email in the appropriate DB field.
+   * Fires WorkflowEmailService (fire-and-forget) after the transaction.
+   */
+  async processMasterContractWorkflowActionAtomic(contractId, payload = {}, context = {}) {
+    const id = String(contractId || '').trim();
+    const action = String(payload.action || '').trim().toUpperCase();
+    const remarks = payload.remarks ? String(payload.remarks) : null;
+    const actor = this.resolveAuditActor(context);
+
+    if (!id) {
+      const error = new Error('Contract ID is required.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const VALID_ACTIONS = ['CHECK_BRINS', 'APPROVE_BRINS', 'CHECK_TUGURE', 'APPROVE', 'REVISION'];
+    if (!VALID_ACTIONS.includes(action)) {
+      const error = new Error(`Invalid action. Must be one of: ${VALID_ACTIONS.join(', ')}`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Status transition map: { action → { expectedCurrentStatus, newStatus } }
+    const TRANSITIONS = {
+      CHECK_BRINS:  { from: ['SUBMITTED', 'Draft'],    to: 'CHECKED_BRINS' },
+      APPROVE_BRINS:{ from: ['CHECKED_BRINS'],          to: 'APPROVED_BRINS' },
+      CHECK_TUGURE: { from: ['APPROVED_BRINS'],          to: 'CHECKED_TUGURE' },
+      APPROVE:      { from: ['CHECKED_TUGURE'],          to: 'APPROVED' },
+      REVISION:     { from: ['CHECKED_BRINS', 'CHECKED_TUGURE'], to: 'REVISION' },
+    };
+
+    try {
+      const updated = await prisma.$transaction(async (tx) => {
+        const existing = await tx.masterContract.findUnique({ where: { contract_id: id } });
+        if (!existing) {
+          const error = new Error(`Master Contract ${id} not found.`);
+          error.statusCode = 404;
+          throw error;
+        }
+
+        const transition = TRANSITIONS[action];
+        const currentStatus = existing.status_approval || 'SUBMITTED';
+        if (!transition.from.includes(currentStatus)) {
+          const error = new Error(`Cannot perform ${action}: contract is in ${currentStatus} status, expected ${transition.from.join(' or ')}.`);
+          error.statusCode = 400;
+          throw error;
+        }
+
+        // Build update data
+        const updates = { status_approval: transition.to };
+        const now = new Date();
+        if (action === 'CHECK_BRINS') {
+          updates.checked_by_brins = actor.user_email;
+          updates.checked_date_brins = now;
+        } else if (action === 'APPROVE_BRINS') {
+          updates.first_approved_by = actor.user_email;
+          updates.first_approved_date = now;
+          if (remarks) updates.remark = remarks;
+        } else if (action === 'CHECK_TUGURE') {
+          updates.checked_by_tugure = actor.user_email;
+          updates.checked_date_tugure = now;
+        } else if (action === 'APPROVE') {
+          updates.second_approved_by = actor.user_email;
+          updates.second_approved_date = now;
+          updates.contract_status = 'APPROVED';
+          if (remarks) updates.remark = remarks;
+        } else if (action === 'REVISION') {
+          updates.contract_status = 'REVISION';
+          updates.revision_reason = remarks;
+        }
+
+        const contract = await tx.masterContract.update({
+          where: { contract_id: id },
+          data: updates,
+        });
+
+        await tx.auditLog.create({
+          data: {
+            action: `CONTRACT_${action}`,
+            module: 'CONFIG',
+            entity_type: 'MasterContract',
+            entity_id: id,
+            old_value: JSON.stringify({ status_approval: currentStatus }),
+            new_value: JSON.stringify({ status_approval: transition.to }),
+            user_email: actor.user_email,
+            user_role: actor.user_role,
+            reason: remarks,
+            ip_address: context?.ipAddress || null,
+          },
+        });
+
+        await tx.notification.create({
+          data: {
+            title: action === 'REVISION' ? 'Contract Needs Revision' : `Contract ${action.replace('_', ' ')}`,
+            message: action === 'REVISION'
+              ? `Master Contract ${id} needs revision: ${remarks || '-'}`
+              : `Master Contract ${id} status updated to ${transition.to}`,
+            type: action === 'REVISION' ? 'WARNING' : 'INFO',
+            module: 'CONFIG',
+            reference_type: 'MasterContract',
+            reference_id: id,
+            target_role: 'ALL',
+          },
+        });
+
+        return contract;
+      });
+
+      // Fire-and-forget emails after transaction succeeds (lazy import to avoid circular deps)
+      Promise.resolve().then(async () => {
+        try {
+          const { default: WorkflowEmailService } = await import('./WorkflowEmailService.js');
+          const contract = updated;
+          const ctx = {
+            actorEmail: actor.user_email,
+            uploaderEmail: contract.uploaded_by,
+            checkerEmail: contract.checked_by_brins,
+            checkerBrinsEmail: contract.checked_by_brins,
+            approverBrinsEmail: contract.first_approved_by,
+            checkerTugureEmail: contract.checked_by_tugure,
+            batchId: id,
+            module: 'MC',
+            remarks,
+          };
+          if (action === 'CHECK_BRINS')   WorkflowEmailService.sendCheckBrinsEmail(ctx);
+          else if (action === 'APPROVE_BRINS') WorkflowEmailService.sendApproveBrinsEmail(ctx);
+          else if (action === 'CHECK_TUGURE')  WorkflowEmailService.sendCheckTugureEmail(ctx);
+          else if (action === 'APPROVE')       WorkflowEmailService.sendApproveFinalEmail(ctx);
+          else if (action === 'REVISION')      WorkflowEmailService.sendRevisionEmail({ uploaderEmail: contract.uploaded_by, batchId: id, module: 'MC', remarks });
+        } catch (emailErr) {
+          console.warn('[EntityService] MC workflow email dispatch failed:', emailErr.message);
+        }
+      });
+
+      return updated;
+    } catch (error) {
+      throw this.buildReadableError(error, 'Master contract workflow action failed.');
     }
   }
 
@@ -1361,6 +1508,8 @@ export default class EntityService {
                 claim: 0,
                 total: bt,
                 net_due: bnd,
+                uploaded_by: actor.user_email,
+                uploaded_date: new Date(),
               },
             });
           }

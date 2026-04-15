@@ -2,8 +2,10 @@ import { sendSuccess, sendCreated, sendError } from '../utils/response.js';
 import { paginate, paginationResponse } from '../utils/pagination.js';
 import * as jobQueue from '../utils/jobQueue.js';
 import * as DebtorService from '../services/DebtorService.js';
+import * as ClaimService from '../services/ClaimService.js';
 import prisma from '../prisma/client.js';
 import { NotificationRepository } from '../repositories/NotificationRepository.js';
+import * as WorkflowEmailService from '../services/WorkflowEmailService.js';
 
 const ALL_ROLES = ['maker-brins-role', 'checker-brins-role', 'approver-brins-role', 'checker-tugure-role', 'approver-tugure-role'];
 
@@ -200,6 +202,19 @@ export default class EntityController {
           headers: request.headers,
         }
       );
+
+      // Fire-and-forget upload email
+      const uploaderEmail = request.user?.email;
+      const firstContractId = result.contracts?.[0]?.contract_id;
+      if (firstContractId && uploaderEmail) {
+        WorkflowEmailService.sendUploadEmail({
+          uploaderEmail,
+          batchId: firstContractId,
+          module: 'MC',
+          count: result.createdCount,
+        });
+      }
+
       return sendCreated(
         reply,
         result,
@@ -223,6 +238,19 @@ export default class EntityController {
           headers: request.headers,
         }
       );
+
+      // Fire-and-forget upload email
+      const uploaderEmail = request.user?.email;
+      const batchId = result.debtors?.[0]?.batch_id;
+      if (batchId && uploaderEmail) {
+        WorkflowEmailService.sendUploadEmail({
+          uploaderEmail,
+          batchId,
+          module: 'DEBTOR',
+          count: result.createdCount,
+        });
+      }
+
       return sendCreated(
         reply,
         result,
@@ -355,6 +383,93 @@ export default class EntityController {
       }
 
       return sendSuccess(reply, job, 'Job status retrieved');
+    } catch (error) {
+      return sendError(reply, error, error.statusCode || 500);
+    }
+  }
+
+  /**
+   * MC workflow-action: handles CHECK_BRINS, APPROVE_BRINS, CHECK_TUGURE, APPROVE, REVISION
+   * POST /api/apps/:appId/master-contracts/:contractId/workflow-action
+   * Body: { action: string, remarks?: string }
+   */
+  async processMasterContractWorkflowAction(request, reply) {
+    try {
+      const result = await this.entityService.processMasterContractWorkflowActionAtomic(
+        request.params.contractId,
+        request.body,
+        {
+          user: request.user,
+          ipAddress: request.ip,
+          headers: request.headers,
+        }
+      );
+      return sendSuccess(reply, result, 'Master contract workflow action processed successfully');
+    } catch (error) {
+      return sendError(reply, error, error.statusCode || 500);
+    }
+  }
+
+  /**
+   * Claim workflow-action: handles CHECK_BRINS, APPROVE_BRINS, CHECK_TUGURE, APPROVE, REVISION
+   * POST /api/apps/:appId/claims/:claimNo/workflow-action
+   * Body: { action: string, remarks?: string }
+   */
+  async processClaimWorkflowAction(request, reply) {
+    try {
+      const { claimNo } = request.params;
+      const { action, remarks } = request.body || {};
+      const auditActor = {
+        user_email: request.user?.email || 'system',
+        user_role: request.user?.role || 'system',
+      };
+
+      const VALID_ACTIONS = ['CHECK_BRINS', 'APPROVE_BRINS', 'CHECK_TUGURE', 'APPROVE', 'REVISION'];
+      if (!action || !VALID_ACTIONS.includes(action.toUpperCase())) {
+        return sendError(reply, new Error(`Invalid action. Must be one of: ${VALID_ACTIONS.join(', ')}`), 400);
+      }
+
+      let result;
+      const upperAction = action.toUpperCase();
+
+      if (upperAction === 'CHECK_BRINS' || upperAction === 'CHECK_TUGURE') {
+        result = await ClaimService.processClaimCheck(claimNo, auditActor);
+      } else if (upperAction === 'APPROVE_BRINS' || upperAction === 'APPROVE') {
+        result = await ClaimService.processClaimApproval(claimNo, remarks || '', auditActor);
+      } else if (upperAction === 'REVISION') {
+        result = await ClaimService.processClaimRevision(claimNo, remarks || '', auditActor);
+      }
+
+      if (!result.success) {
+        const err = new Error(result.error || 'Claim workflow action failed');
+        err.statusCode = 400;
+        return sendError(reply, err, 400);
+      }
+
+      // Fire-and-forget emails
+      const claim = await prisma.claim.findUnique({ where: { claim_no: claimNo } });
+      if (claim) {
+        const batch = claim.batch_id ? await prisma.batch.findUnique({ where: { batch_id: claim.batch_id } }) : null;
+        const uploaderEmail = batch?.uploaded_by || claim.batch_uploaded_by;
+        const ctx = {
+          actorEmail: auditActor.user_email,
+          uploaderEmail,
+          checkerEmail: claim.checked_by,
+          checkerBrinsEmail: claim.checked_by,
+          approverBrinsEmail: claim.approved_by_brins,
+          checkerTugureEmail: claim.checked_by_tugure,
+          batchId: claimNo,
+          module: 'CLAIM',
+          remarks,
+        };
+        if (upperAction === 'CHECK_BRINS') WorkflowEmailService.sendCheckBrinsEmail(ctx);
+        else if (upperAction === 'APPROVE_BRINS') WorkflowEmailService.sendApproveBrinsEmail(ctx);
+        else if (upperAction === 'CHECK_TUGURE') WorkflowEmailService.sendCheckTugureEmail(ctx);
+        else if (upperAction === 'APPROVE') WorkflowEmailService.sendApproveFinalEmail(ctx);
+        else if (upperAction === 'REVISION') WorkflowEmailService.sendRevisionEmail({ uploaderEmail, batchId: claimNo, module: 'CLAIM', remarks });
+      }
+
+      return sendSuccess(reply, result, 'Claim workflow action processed successfully');
     } catch (error) {
       return sendError(reply, error, error.statusCode || 500);
     }
@@ -496,6 +611,40 @@ async function processBulkDebtorActionBackground(jobId, action, queryFilters, re
         }
       } catch (notifErr) {
         console.warn(`Failed to create batch notification for job ${jobId}:`, notifErr);
+      }
+    }
+
+    // Send batch-level workflow email using WorkflowEmailService (fire-and-forget)
+    if (processedCount > 0 && batchId) {
+      const actorEmail = auditActor.user_email || 'system';
+      const ctx = {
+        actorEmail,
+        uploaderEmail: batchRecord?.uploaded_by,
+        checkerBrinsEmail: batchRecord?.validated_by,
+        approverBrinsEmail: batchRecord?.approved_by,
+        checkerTugureEmail: batchRecord?.tugure_checked_by,
+        batchId,
+        module: 'DEBTOR',
+        remarks,
+      };
+
+      if (action === 'check') {
+        // Determine if this is BRINS check or TUGURE check from the first debtor's status
+        const sampleDebtor = debtors[0];
+        if (sampleDebtor?.status === 'SUBMITTED') {
+          WorkflowEmailService.sendCheckBrinsEmail({ ...ctx, uploaderEmail: batchRecord?.uploaded_by });
+        } else {
+          WorkflowEmailService.sendCheckTugureEmail(ctx);
+        }
+      } else if (action === 'approve') {
+        const sampleDebtor = debtors[0];
+        if (sampleDebtor?.status === 'CHECKED_BRINS') {
+          WorkflowEmailService.sendApproveBrinsEmail({ ...ctx, checkerEmail: batchRecord?.validated_by });
+        } else {
+          WorkflowEmailService.sendApproveFinalEmail(ctx);
+        }
+      } else if (action === 'revision') {
+        WorkflowEmailService.sendRevisionEmail({ uploaderEmail: batchRecord?.uploaded_by, batchId, module: 'DEBTOR', remarks });
       }
     }
 

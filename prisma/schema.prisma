@@ -49,6 +49,10 @@ model Batch {
   matched_date            DateTime?
   approved_by             String?
   approved_date           DateTime?
+  tugure_checked_by       String?
+  tugure_checked_date     DateTime?
+  tugure_approved_by      String?
+  tugure_approved_date    DateTime?
   nota_issued_by          String?
   nota_issued_date        DateTime?
   branch_confirmed_by     String?
@@ -58,6 +62,8 @@ model Batch {
   closed_by               String?
   closed_date             DateTime?
   revision_reason         String?
+  uploaded_by             String?
+  uploaded_date           DateTime?
   premium                 Decimal? @db.Decimal(25, 2)
   commission              Decimal? @db.Decimal(25, 2)
   claim                   Decimal? @db.Decimal(25, 2)
@@ -109,11 +115,16 @@ model Claim {
   contract_id              String?
   checked_by               String?
   checked_date             DateTime?
+  approved_by_brins        String?
+  approved_date_brins      DateTime?
+  checked_by_tugure        String?
+  checked_date_tugure      DateTime?
   approved_by              String?
   approved_date            DateTime?
   revision_reason          String?
   reviewed_by              String?
   review_date              DateTime?
+  batch_uploaded_by        String?
   @@map("claim")
 }
 
@@ -422,11 +433,17 @@ model MasterContract {
   parent_contract_id         String?
 
   // === Approval ===
+  checked_by_brins           String?
+  checked_date_brins         DateTime?
   first_approved_by          String?
   first_approved_date        DateTime?
+  checked_by_tugure          String?
+  checked_date_tugure        DateTime?
   second_approved_by         String?
   second_approved_date       DateTime?
   revision_reason            String?
+  uploaded_by                String?
+  uploaded_date              DateTime?
 
   @@map("mastercontract")
 }

@@ -49,6 +49,23 @@ export async function processDebtorCheck(debtorId, auditActor = {}, options = {}
       data: { status: newStatus },
     });
 
+    // Record actor on the parent Batch for later email context
+    try {
+      if (newStatus === 'CHECKED_BRINS') {
+        await prisma.batch.update({
+          where: { batch_id: debtor.batch_id },
+          data: { validated_by: auditActor.user_email || 'system', validated_date: new Date() },
+        });
+      } else if (newStatus === 'CHECKED_TUGURE') {
+        await prisma.batch.update({
+          where: { batch_id: debtor.batch_id },
+          data: { tugure_checked_by: auditActor.user_email || 'system', tugure_checked_date: new Date() },
+        });
+      }
+    } catch (batchErr) {
+      console.warn(`Failed to update batch actor field for ${debtor.batch_id}:`, batchErr);
+    }
+
     // Create audit log
     try {
       await prisma.auditLog.create({
@@ -144,6 +161,23 @@ export async function processDebtorApproval(debtorId, remarks = '', auditActor =
         status: newStatus,
       },
     });
+
+    // Record actor on the parent Batch for later email context
+    try {
+      if (newStatus === 'APPROVED_BRINS') {
+        await prisma.batch.update({
+          where: { batch_id: debtor.batch_id },
+          data: { approved_by: auditActor.user_email || 'system', approved_date: new Date() },
+        });
+      } else if (newStatus === 'APPROVED') {
+        await prisma.batch.update({
+          where: { batch_id: debtor.batch_id },
+          data: { tugure_approved_by: auditActor.user_email || 'system', tugure_approved_date: new Date() },
+        });
+      }
+    } catch (batchErr) {
+      console.warn(`Failed to update batch actor field for ${debtor.batch_id}:`, batchErr);
+    }
 
     // Create Record for approved debtor (only in Tugure workflow)
     if (shouldCreateRecord) {
