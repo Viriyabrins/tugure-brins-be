@@ -18,12 +18,33 @@ export default async function buildServer() {
 
   await fastify.register(cors, {
     origin: true,
-    allowedHeaders: ['Authorization', 'Content-Type', 'X-App-Id'],
+    allowedHeaders: [
+      'Authorization',
+      'Content-Type',
+      'X-App-Id',
+      'X-Signature',
+      'X-Signature-Timestamp',
+      'X-Signature-UUID',
+    ],
     credentials: true
   });
 
   await fastify.register(fastifyAutoload, {
     dir: path.join(__dirname, 'plugins')
+  });
+
+  // Global signature validation — applies to every /api/* route.
+  // verifySignature decorator is registered by plugins/signature.js (via fastify-plugin).
+  // Routes that the frontend legitimately calls WITHOUT a signature are not exempted here
+  // because the browser always attaches X-Signature headers via withSignatureHeaders().
+  // The /api/db-channel/stream SSE route is exempted because it uses a long-lived
+  // connection that cannot be re-signed per-request.
+  fastify.addHook('onRequest', async (request, reply) => {
+    // Only validate routes under the /api prefix
+    if (!request.url?.startsWith('/api')) return;
+    // Exempt SSE streaming (long-lived connection, cannot carry per-request signature)
+    if (request.url.includes('/db-channel/stream')) return;
+    await fastify.verifySignature(request, reply);
   });
 
   await fastify.register(fastifyAutoload, {
