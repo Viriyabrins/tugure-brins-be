@@ -42,6 +42,8 @@ export default async function buildServer() {
   fastify.addHook('onRequest', async (request, reply) => {
     // Only validate routes under the /api prefix
     if (!request.url?.startsWith('/api')) return;
+    // Exempt server-time endpoint (bootstrap for client offset-sync; no signature available yet)
+    if (request.url === '/api/time') return;
     // Exempt SSE streaming (long-lived connection, cannot carry per-request signature)
     if (request.url.includes('/db-channel/stream')) return;
     await fastify.verifySignature(request, reply);
