@@ -45,7 +45,7 @@ export default async function buildServer() {
     // Exempt server-time endpoint (bootstrap for client offset-sync; no signature available yet)
     // Normalize path (strip query string and trailing slashes) before comparison so
     // requests like `/api/time/` or `/api/time?foo=bar` are properly exempted.
-    const requestPath = String(request.url).split('?')[0].replace(/\/+$, '');
+    const requestPath = String(request.url).split('?')[0].replace(/\/+$/, '');
     if (requestPath === '/api/time') return;
     // Exempt SSE streaming (long-lived connection, cannot carry per-request signature)
     if (request.url.includes('/db-channel/stream')) return;
