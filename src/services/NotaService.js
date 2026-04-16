@@ -77,4 +77,28 @@ export async function recordNotaPayment(notaNumber, {
   return paymentRef;
 }
 
-export default { getNotaContext, recordNotaPayment };
+/**
+ * Atomically mark multiple notas as PAID in a single database transaction.
+ * If any update fails the entire operation is rolled back — no partial state.
+ * @param {string[]} notaNumbers - Array of nota_number PKs to mark as PAID
+ * @param {string} userEmail - Email of the user performing the action
+ * @returns {Promise<string[]>} Array of updated nota_number values
+ */
+export async function bulkMarkNotasPaid(notaNumbers, userEmail) {
+  const now = new Date();
+  const updated = await prisma.$transaction(
+    notaNumbers.map((notaNumber) =>
+      prisma.nota.update({
+        where: { nota_number: notaNumber },
+        data: {
+          status: 'PAID',
+          marked_paid_by: userEmail,
+          marked_paid_date: now,
+        },
+      })
+    )
+  );
+  return updated.map((r) => r.nota_number);
+}
+
+export default { getNotaContext, recordNotaPayment, bulkMarkNotasPaid };

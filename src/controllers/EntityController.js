@@ -647,6 +647,20 @@ export default class EntityController {
       return sendError(reply, error, 500);
     }
   }
+
+  async bulkMarkNotasPaid(request, reply) {
+    try {
+      const { notaNumbers } = request.body || {};
+      if (!Array.isArray(notaNumbers) || notaNumbers.length === 0) {
+        return sendError(reply, new Error('notaNumbers must be a non-empty array'), 400);
+      }
+      const userEmail = request.user?.email || 'system';
+      const updated = await NotaService.bulkMarkNotasPaid(notaNumbers, userEmail);
+      return sendSuccess(reply, { updated }, `${updated.length} notas marked as PAID`);
+    } catch (error) {
+      return sendError(reply, error, 500);
+    }
+  }
 }
 
 /**
