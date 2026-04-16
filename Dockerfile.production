@@ -12,9 +12,9 @@ ARG APP_GID=1000
 
 # Ensure directories exist and set numeric ownership to avoid useradd/UID collisions
 RUN set -eux; \
-	mkdir -p /app /home/brins; \
-	chown -R "${APP_UID}:${APP_GID}" /home/brins /app
-ENV HOME=/home/brins
+	mkdir -p /app /home/ubuntu; \
+	chown -R "${APP_UID}:${APP_GID}" /home/ubuntu /app
+ENV HOME=/home/ubuntu
 
 # Install dependencies (production only) as unprivileged user
 # Copy package files first for Docker layer caching and ensure ownership

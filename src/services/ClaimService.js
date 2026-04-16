@@ -344,8 +344,10 @@ export async function createSubrogationEntry(data = {}, auditActor = {}) {
 }
 
 /**
- * Process a subrogation workflow action: 'check', 'approve', or 'revise'.
- * 'approve' creates a Nota, updates Subrogation status, and notifies.
+ * Process a subrogation workflow action (4-stage mirror of claim):
+ * SUBMITTED → CHECKED_BRINS → APPROVED_BRINS → CHECKED_TUGURE → APPROVED
+ * REVISION allowed from CHECKED_BRINS or CHECKED_TUGURE.
+ * 'approve' (final TUGURE) creates a Nota.
  * Returns the nota_number for 'approve', undefined otherwise.
  */
 export async function processSubrogationWorkflow(subId, action, data = {}, auditActor = {}) {
@@ -353,22 +355,97 @@ export async function processSubrogationWorkflow(subId, action, data = {}, audit
   if (!sub) throw new Error(`Subrogation ${subId} not found`);
   const actorEmail = auditActor.user_email || 'system';
 
-  if (action === 'check') {
+  if (action === 'check_brins') {
+    if (sub.status !== 'SUBMITTED') {
+      throw new Error(`Subrogation ${subId} has invalid status: ${sub.status}, expected SUBMITTED`);
+    }
     await prisma.subrogation.update({
       where: { subrogation_id: subId },
-      data: { status: 'CHECKED', checked_by: actorEmail, checked_date: new Date(), reviewed_by: actorEmail, review_date: new Date() },
+      data: { status: 'CHECKED_BRINS', checked_by: actorEmail, checked_date: new Date() },
     });
     try {
       await prisma.auditLog.create({
         data: {
-          action: 'SUBROGATION_CHECK', module: 'SUBROGATION', entity_type: 'Subrogation', entity_id: subId,
-          old_value: JSON.stringify({ status: sub.status }), new_value: JSON.stringify({ status: 'CHECKED' }),
+          action: 'SUBROGATION_CHECK_BRINS', module: 'SUBROGATION', entity_type: 'Subrogation', entity_id: subId,
+          old_value: JSON.stringify({ status: sub.status }), new_value: JSON.stringify({ status: 'CHECKED_BRINS' }),
           user_email: actorEmail, user_role: auditActor.user_role || 'system', reason: '',
         },
       });
     } catch (e) { console.warn('Audit failed:', e); }
+    try {
+      for (const role of ALL_ROLES) {
+        await prisma.notification.create({
+          data: {
+            title: 'Subrogation Checked by BRINS',
+            message: `BRINS Checker (${actorEmail}) checked subrogation ${subId}.`,
+            type: 'INFO', module: 'SUBROGATION', reference_id: subId, target_role: role,
+          },
+        });
+      }
+    } catch (e) { console.warn('Notification failed:', e); }
+
+  } else if (action === 'approve_brins') {
+    if (sub.status !== 'CHECKED_BRINS') {
+      throw new Error(`Subrogation ${subId} has invalid status: ${sub.status}, expected CHECKED_BRINS`);
+    }
+    await prisma.subrogation.update({
+      where: { subrogation_id: subId },
+      data: { status: 'APPROVED_BRINS', approved_by_brins: actorEmail, approved_date_brins: new Date() },
+    });
+    try {
+      await prisma.auditLog.create({
+        data: {
+          action: 'SUBROGATION_APPROVE_BRINS', module: 'SUBROGATION', entity_type: 'Subrogation', entity_id: subId,
+          old_value: JSON.stringify({ status: sub.status }), new_value: JSON.stringify({ status: 'APPROVED_BRINS' }),
+          user_email: actorEmail, user_role: auditActor.user_role || 'system', reason: '',
+        },
+      });
+    } catch (e) { console.warn('Audit failed:', e); }
+    try {
+      for (const role of ALL_ROLES) {
+        await prisma.notification.create({
+          data: {
+            title: 'Subrogation Approved by BRINS',
+            message: `BRINS Approver (${actorEmail}) approved subrogation ${subId}.`,
+            type: 'INFO', module: 'SUBROGATION', reference_id: subId, target_role: role,
+          },
+        });
+      }
+    } catch (e) { console.warn('Notification failed:', e); }
+
+  } else if (action === 'check_tugure') {
+    if (sub.status !== 'APPROVED_BRINS') {
+      throw new Error(`Subrogation ${subId} has invalid status: ${sub.status}, expected APPROVED_BRINS`);
+    }
+    await prisma.subrogation.update({
+      where: { subrogation_id: subId },
+      data: { status: 'CHECKED_TUGURE', checked_by_tugure: actorEmail, checked_date_tugure: new Date() },
+    });
+    try {
+      await prisma.auditLog.create({
+        data: {
+          action: 'SUBROGATION_CHECK_TUGURE', module: 'SUBROGATION', entity_type: 'Subrogation', entity_id: subId,
+          old_value: JSON.stringify({ status: sub.status }), new_value: JSON.stringify({ status: 'CHECKED_TUGURE' }),
+          user_email: actorEmail, user_role: auditActor.user_role || 'system', reason: '',
+        },
+      });
+    } catch (e) { console.warn('Audit failed:', e); }
+    try {
+      for (const role of ALL_ROLES) {
+        await prisma.notification.create({
+          data: {
+            title: 'Subrogation Checked by TUGURE',
+            message: `TUGURE Checker (${actorEmail}) checked subrogation ${subId}.`,
+            type: 'INFO', module: 'SUBROGATION', reference_id: subId, target_role: role,
+          },
+        });
+      }
+    } catch (e) { console.warn('Notification failed:', e); }
 
   } else if (action === 'approve') {
+    if (sub.status !== 'CHECKED_TUGURE') {
+      throw new Error(`Subrogation ${subId} has invalid status: ${sub.status}, expected CHECKED_TUGURE`);
+    }
     const { contractId = '', recoveryAmount, remarks = '' } = data;
     const amount = parseFloat(recoveryAmount ?? sub.recovery_amount) || 0;
     const notaNumber = `NOTA-SBR-${subId}-${Date.now()}`;
@@ -414,6 +491,9 @@ export async function processSubrogationWorkflow(subId, action, data = {}, audit
     return notaNumber;
 
   } else if (action === 'revise') {
+    if (!['CHECKED_BRINS', 'CHECKED_TUGURE'].includes(sub.status)) {
+      throw new Error(`Subrogation ${subId} has invalid status: ${sub.status}, expected CHECKED_BRINS or CHECKED_TUGURE`);
+    }
     const { remarks = '' } = data;
     await prisma.subrogation.update({ where: { subrogation_id: subId }, data: { status: 'REVISION', remarks } });
     try {
@@ -425,6 +505,17 @@ export async function processSubrogationWorkflow(subId, action, data = {}, audit
         },
       });
     } catch (e) { console.warn('Audit failed:', e); }
+    try {
+      for (const role of ALL_ROLES) {
+        await prisma.notification.create({
+          data: {
+            title: 'Subrogation Marked for Revision',
+            message: `${actorEmail} marked subrogation ${subId} for revision.`,
+            type: 'WARNING', module: 'SUBROGATION', reference_id: subId, target_role: role,
+          },
+        });
+      }
+    } catch (e) { console.warn('Notification failed:', e); }
 
   } else {
     throw new Error(`Unknown subrogation action: ${action}`);

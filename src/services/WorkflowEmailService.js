@@ -78,6 +78,8 @@ function moduleLabel(mod) {
       return 'Master Contract';
     case 'CLAIM':
       return 'Claim';
+    case 'SUBROGATION':
+      return 'Subrogation';
     default:
       return 'Debtor Batch';
   }
