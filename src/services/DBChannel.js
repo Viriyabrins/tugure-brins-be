@@ -3,7 +3,7 @@ import { Client } from 'pg';
 import eventBus from '../utils/eventBus.js';
 
 let client = null;
-const channelTables = new Set((process.env.DB_CHANNEL_TABLES || 'debtor,mastercontract')
+const channelTables = new Set((process.env.DB_CHANNEL_TABLES)
   .split(',')
   .map((table) => table.trim())
   .filter(Boolean));
@@ -25,6 +25,7 @@ export async function startDBChannel() {
       });
       // handle entity-specific logic
     }
+    console.log(`[DBChannel] Received notification for table: ${payload.table}, operation: ${payload.action}`);
   });
 
   client.on('error', (error) => {

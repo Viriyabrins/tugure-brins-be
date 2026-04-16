@@ -193,6 +193,88 @@ class MinioService {
   }
 
   /**
+   * Upload a file to a specific path prefix (folder-based storage).
+   * @param {Buffer|Stream} fileContent - File content
+   * @param {string} fileName - Original file name
+   * @param {string} pathPrefix - Path prefix (e.g., 'claim/attachment/NP001')
+   * @param {string} [identifier] - Optional identifier to include in filename (e.g., contractNo, batchId)
+   * @param {Object} [metadata] - Optional metadata key-value pairs
+   * @returns {Promise<{key: string, fileName: string, size: number, uploadedAt: string}>}
+   */
+  async uploadFileToPath(fileContent, fileName, pathPrefix, identifier = '', metadata = {}) {
+    if (!this.s3Client) {
+      throw new Error('MinIO service not configured');
+    }
+
+    const timestamp = Date.now();
+    const uniqueFileName = identifier
+      ? `${timestamp}-${identifier}-${fileName}`
+      : `${timestamp}-${fileName}`;
+    // Remove trailing slash from prefix if present
+    const cleanPrefix = pathPrefix.replace(/\/+$/, '');
+    const key = `${cleanPrefix}/${uniqueFileName}`;
+
+    try {
+      const command = new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: fileContent,
+        ContentType: this._getContentType(fileName),
+        Metadata: {
+          'original-filename': fileName,
+          'uploaded-at': new Date().toISOString(),
+          ...metadata,
+        },
+      });
+
+      await this.s3Client.send(command);
+
+      return {
+        key,
+        fileName,
+        size: fileContent.length,
+        uploadedAt: new Date().toISOString(),
+      };
+    } catch (err) {
+      console.error('[MinioService] Upload to path failed:', err);
+      throw new Error(`MinIO upload failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * List all files under an arbitrary path prefix.
+   * @param {string} pathPrefix - Path prefix (e.g., 'claim/attachment/NP001')
+   * @returns {Promise<Array>} Array of file objects
+   */
+  async listFilesByPath(pathPrefix) {
+    if (!this.s3Client) {
+      return [];
+    }
+
+    try {
+      const prefix = pathPrefix.endsWith('/') ? pathPrefix : `${pathPrefix}/`;
+      const command = new ListObjectsV2Command({
+        Bucket: this.bucket,
+        Prefix: prefix,
+      });
+
+      const response = await this.s3Client.send(command);
+
+      if (!response.Contents) return [];
+
+      return response.Contents.map((obj) => ({
+        key: obj.Key,
+        fileName: obj.Key.split('/').pop(),
+        size: obj.Size,
+        lastModified: obj.LastModified,
+      }));
+    } catch (err) {
+      console.error('[MinioService] List by path failed:', err);
+      throw new Error(`MinIO list failed: ${err.message}`);
+    }
+  }
+
+  /**
    * Get MIME type from file name.
    * @private
    */

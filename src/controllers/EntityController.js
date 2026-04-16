@@ -154,11 +154,10 @@ export default class EntityController {
   async validateClaims(request, reply) {
     try {
       const rows = Array.isArray(request.body?.rows) ? request.body.rows : [];
-      const batchId = request.body?.batch_id || null;
       if (rows.length === 0) {
         return sendError(reply, new Error('No data rows were submitted for validation.'), 400);
       }
-      const result = await this.entityService.validateClaimRows(rows, batchId);
+      const result = await this.entityService.validateClaimRows(rows);
       if (!result.valid) {
         const summary = result.errors
           .slice(0, 20)
@@ -644,6 +643,20 @@ export default class EntityController {
       const userEmail = request.user?.email || 'system';
       const paymentRef = await NotaService.recordNotaPayment(notaId, { ...request.body, userEmail });
       return sendSuccess(reply, { payment_ref: paymentRef }, 'Payment recorded');
+    } catch (error) {
+      return sendError(reply, error, 500);
+    }
+  }
+
+  async bulkMarkNotasPaid(request, reply) {
+    try {
+      const { notaNumbers } = request.body || {};
+      if (!Array.isArray(notaNumbers) || notaNumbers.length === 0) {
+        return sendError(reply, new Error('notaNumbers must be a non-empty array'), 400);
+      }
+      const userEmail = request.user?.email || 'system';
+      const updated = await NotaService.bulkMarkNotasPaid(notaNumbers, userEmail);
+      return sendSuccess(reply, { updated }, `${updated.length} notas marked as PAID`);
     } catch (error) {
       return sendError(reply, error, 500);
     }

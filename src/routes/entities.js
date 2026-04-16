@@ -200,5 +200,11 @@ export default async function (fastify) {
     { preHandler: fastify.authenticate },
     controller.recordNotaPayment.bind(controller)
   );
+
+  fastify.post(
+    '/apps/:appId/notas/bulk-mark-paid',
+    { preHandler: fastify.authenticate },
+    controller.bulkMarkNotasPaid.bind(controller)
+  );
 }
 
