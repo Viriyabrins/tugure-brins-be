@@ -877,7 +877,6 @@ export default class EntityService {
         } else if (action === 'APPROVE') {
           updates.second_approved_by = actor.user_email;
           updates.second_approved_date = now;
-          updates.contract_status = 'APPROVED';
           if (remarks) updates.remark = remarks;
         } else if (action === 'REVISION') {
           updates.contract_status = 'REVISION';
