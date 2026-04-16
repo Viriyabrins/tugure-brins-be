@@ -743,12 +743,16 @@ model Subrogation {
   closed_by       String?
   closed_date     DateTime?
   remarks         String?
-  checked_by      String?
-  checked_date    DateTime?
-  approved_by     String?
-  approved_date   DateTime?
-  reviewed_by     String?
-  review_date     DateTime?
+  checked_by           String?
+  checked_date         DateTime?
+  approved_by_brins    String?
+  approved_date_brins  DateTime?
+  checked_by_tugure    String?
+  checked_date_tugure  DateTime?
+  approved_by          String?
+  approved_date        DateTime?
+  reviewed_by          String?
+  review_date          DateTime?
   @@map("subrogation")
 }
 

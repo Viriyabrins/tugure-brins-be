@@ -584,12 +584,34 @@ export default class EntityController {
     try {
       const { subId } = request.params;
       const { action, ...data } = request.body || {};
-      const VALID = ['check', 'approve', 'revise'];
+      const VALID = ['check_brins', 'approve_brins', 'check_tugure', 'approve', 'revise'];
       if (!VALID.includes(action)) {
         return sendError(reply, new Error(`action must be one of: ${VALID.join(', ')}`), 400);
       }
       const auditActor = this.entityService.resolveAuditActor({ user: request.user });
       const notaNumber = await ClaimService.processSubrogationWorkflow(subId, action, data, auditActor);
+
+      // Fire-and-forget emails
+      const sub = await prisma.subrogation.findUnique({ where: { subrogation_id: subId } });
+      if (sub) {
+        const ctx = {
+          actorEmail: auditActor.user_email,
+          uploaderEmail: sub.checked_by || auditActor.user_email,
+          checkerEmail: sub.checked_by,
+          checkerBrinsEmail: sub.checked_by,
+          approverBrinsEmail: sub.approved_by_brins,
+          checkerTugureEmail: sub.checked_by_tugure,
+          batchId: subId,
+          module: 'SUBROGATION',
+          remarks: data.remarks,
+        };
+        if (action === 'check_brins') WorkflowEmailService.sendCheckBrinsEmail(ctx);
+        else if (action === 'approve_brins') WorkflowEmailService.sendApproveBrinsEmail(ctx);
+        else if (action === 'check_tugure') WorkflowEmailService.sendCheckTugureEmail(ctx);
+        else if (action === 'approve') WorkflowEmailService.sendApproveFinalEmail(ctx);
+        else if (action === 'revise') WorkflowEmailService.sendRevisionEmail({ uploaderEmail: sub.checked_by || auditActor.user_email, batchId: subId, module: 'SUBROGATION', remarks: data.remarks });
+      }
+
       return sendSuccess(reply, { subrogation_id: subId, notaNumber: notaNumber || null }, `Subrogation ${action} complete`);
     } catch (error) {
       return sendError(reply, error, 500);
