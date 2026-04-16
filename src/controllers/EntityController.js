@@ -154,11 +154,10 @@ export default class EntityController {
   async validateClaims(request, reply) {
     try {
       const rows = Array.isArray(request.body?.rows) ? request.body.rows : [];
-      const batchId = request.body?.batch_id || null;
       if (rows.length === 0) {
         return sendError(reply, new Error('No data rows were submitted for validation.'), 400);
       }
-      const result = await this.entityService.validateClaimRows(rows, batchId);
+      const result = await this.entityService.validateClaimRows(rows);
       if (!result.valid) {
         const summary = result.errors
           .slice(0, 20)
