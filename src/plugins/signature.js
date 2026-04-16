@@ -53,7 +53,7 @@ export default fp(async (fastify) => {
     *   X-Signature-UUID      — UUID v4 unique per request
     *
     * Canonical payload (must match frontend exactly): `<uuid>|<timestamp>|<METHOD>|<path>`
-     * Expiry: 5 seconds (configurable via SIGNATURE_MAX_AGE_MS / SIGNATURE_TOLERANCE_MS)
+    * Expiry: 10 seconds (configurable via SIGNATURE_MAX_AGE_MS / SIGNATURE_TOLERANCE_MS)
      */
     fastify.decorate('verifySignature', async (request, reply) => {
         const sig = request.headers['x-signature'];

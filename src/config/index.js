@@ -84,9 +84,9 @@ const config = {
     region: process.env.AWS_REGION,
   },
   // Signature validation (HMAC-SHA256)
-  // SIGNATURE_TOLERANCE_MS / SIGNATURE_MAX_AGE_MS: expiry window in ms (default 5 seconds)
+  // SIGNATURE_TOLERANCE_MS / SIGNATURE_MAX_AGE_MS: expiry window in ms (default 10 seconds)
   // SIGNATURE_SECRET: shared secret; must match VITE_SIGNATURE_SECRET / VITE_KEYCLOAK_SECRET_KEY on frontend
-  signatureToleranceMs: Number(process.env.SIGNATURE_TOLERANCE_MS) || Number(process.env.SIGNATURE_MAX_AGE_MS) || 5000,
+  signatureToleranceMs: Number(process.env.SIGNATURE_TOLERANCE_MS) || Number(process.env.SIGNATURE_MAX_AGE_MS) || 10000,
   signatureSecret: process.env.SIGNATURE_SECRET || process.env.KEYCLOAK_SECRET_KEY || '',
 };
 
