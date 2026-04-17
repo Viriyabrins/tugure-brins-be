@@ -7,7 +7,7 @@
  * Response: { serverTime: "<ISO 8601 UTC string>" }
  */
 export default async function (fastify) {
-  fastify.get('/time', async (_request, reply) => {
-    return reply.send({ serverTime: new Date().toISOString() });
-  });
+    fastify.get('/time', async (_request, reply) => {
+        return reply.send({ serverTime: new Date().toISOString() });
+    });
 }

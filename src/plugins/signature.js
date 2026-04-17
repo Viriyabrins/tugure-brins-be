@@ -49,7 +49,7 @@ export default fp(async (fastify) => {
      *
      * Required headers:
     *   X-Signature           — hex HMAC-SHA256 of canonical payload
-    *   X-Signature-Timestamp — ISO 8601 WIB (UTC+7) timestamp sent by frontend
+    *   X-Signature-Timestamp — ISO 8601 UTC timestamp sent by frontend
     *   X-Signature-UUID      — UUID v4 unique per request
     *
     * Canonical payload (must match frontend exactly): `<uuid>|<timestamp>|<METHOD>|<path>`
@@ -78,17 +78,14 @@ export default fp(async (fastify) => {
             throw err;
         }
 
-        // Step 3: Cek usia timestamp berdasarkan waktu Indonesia (WIB = UTC+7).
-        // Frontend mengirim timestamp dalam WIB. Kedua sisi (frontend & server) di-shift
-        // ke WIB epoch yang sama sehingga perbandingan selalu dalam konteks waktu Indonesia,
-        // tidak bergantung pada timezone sistem server.
-        const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
-        const tsWibMs  = tsUtcMs + WIB_OFFSET_MS;       // timestamp frontend dalam WIB epoch
-        const nowWibMs = Date.now() + WIB_OFFSET_MS;    // waktu server sekarang dalam WIB epoch
-        const age = Math.abs(nowWibMs - tsWibMs);
+        // Step 3: Check timestamp age using UTC epoch on both sides.
+        // new Date(timestamp).getTime() returns UTC epoch regardless of any timezone
+        // offset in the ISO string, so comparing directly with Date.now() is always
+        // correct and timezone-agnostic.
+        const age = Math.abs(Date.now() - tsUtcMs);
         if (age > toleranceMs) {
-            fastify.log.warn({ path: request.url, ageMs: age, toleranceMs }, 'Signature rejected: timestamp expired (WIB)');
-            const err = new Error(`Signature kadaluwarsa. Usia: ${age}ms, maks: ${toleranceMs}ms. Pastikan waktu perangkat Anda sesuai dengan waktu Indonesia (WIB).`);
+            fastify.log.warn({ path: request.url, ageMs: age, toleranceMs }, 'Signature rejected: timestamp expired');
+            const err = new Error(`Signature expired. Age: ${age}ms, max: ${toleranceMs}ms. Please ensure your device clock is accurate.`);
             err.statusCode = 401;
             throw err;
         }

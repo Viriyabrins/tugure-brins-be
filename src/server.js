@@ -42,7 +42,7 @@ export default async function buildServer() {
   fastify.addHook('onRequest', async (request, reply) => {
     // Only validate routes under the /api prefix
     if (!request.url?.startsWith('/api')) return;
-    // Exempt server-time endpoint (bootstrap for client offset-sync; no signature available yet)
+    // Exempt server-time endpoint (bootstrap for client clock-sync; no signature available yet).
     // Normalize path (strip query string and trailing slashes) before comparison so
     // requests like `/api/time/` or `/api/time?foo=bar` are properly exempted.
     const requestPath = String(request.url).split('?')[0].replace(/\/+$/, '');
