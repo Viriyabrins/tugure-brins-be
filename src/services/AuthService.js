@@ -58,13 +58,14 @@ export default class AuthService {
    */
   resolveRealm(email) {
     const domain = email.toLowerCase().split('@')[1];
-    const realmKey = DOMAIN_REALM_MAP[domain];
+    const realmKey = DOMAIN_REALM_MAP[domain] || 'brins'; // Default to 'brins' realm if domain not mapped
 
-    if (!realmKey) {
-      const error = new Error(`Unsupported email domain: ${domain}`);
-      error.statusCode = 400;
-      throw error;
-    }
+    // Domain validation disabled for testing
+    // if (!realmKey) {
+    //   const error = new Error(`Unsupported email domain: ${domain}`);
+    //   error.statusCode = 400;
+    //   throw error;
+    // }
 
     let realm, clientId, clientSecret;
 

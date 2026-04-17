@@ -275,6 +275,25 @@ class MinioService {
   }
 
   /**
+   * Delete all files under a given prefix.
+   * @param {string} prefix - Path prefix (e.g., 'master-contract/')
+   * @returns {Promise<number>} Number of files deleted
+   */
+  async deleteAllByPrefix(prefix) {
+    if (!this.s3Client) {
+      return 0;
+    }
+
+    const files = await this.listFilesByPath(prefix);
+    let deleted = 0;
+    for (const file of files) {
+      await this.deleteFile(file.key);
+      deleted++;
+    }
+    return deleted;
+  }
+
+  /**
    * Get MIME type from file name.
    * @private
    */
