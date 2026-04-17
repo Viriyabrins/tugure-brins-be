@@ -20,6 +20,8 @@ class EmailService {
       port,
       secure, // false for port 587 (STARTTLS)
       auth: { user, pass },
+      debug: true,
+      logger: true,
     });
 
     // Verify connection on startup
@@ -49,6 +51,11 @@ class EmailService {
 
     const info = await this.transporter.sendMail(mailOptions);
     console.log(`[EmailService] Email sent to ${to} – messageId: ${info.messageId}`);
+    console.log(`[EmailService] SMTP response: ${info.response}`);
+    console.log(`[EmailService] Accepted: ${JSON.stringify(info.accepted)}`);
+    if (info.rejected?.length) {
+      console.warn(`[EmailService] Rejected: ${JSON.stringify(info.rejected)}`);
+    }
     return { messageId: info.messageId };
   }
 }
