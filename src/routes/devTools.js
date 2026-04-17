@@ -7,6 +7,75 @@ export default async function (fastify) {
     return;
   }
 
+  fastify.get(
+    '/dev-tools/data-counts',
+    { preHandler: fastify.authenticate },
+    async (request, reply) => {
+      try {
+        const [
+          auditLog, notification, document, debitCreditNote, invoice,
+          paymentIntent, payment, reconciliation, contractRevise, reviseLog,
+          debtorRevise, record, subrogation, claim, debtor, nota,
+          masterContract, bordero, batch, contract,
+        ] = await Promise.all([
+          prisma.auditLog.count(),
+          prisma.notification.count(),
+          prisma.document.count(),
+          prisma.debitCreditNote.count(),
+          prisma.invoice.count(),
+          prisma.paymentIntent.count(),
+          prisma.payment.count(),
+          prisma.reconciliation.count(),
+          prisma.contractRevise.count(),
+          prisma.reviseLog.count(),
+          prisma.debtorRevise.count(),
+          prisma.record.count(),
+          prisma.subrogation.count(),
+          prisma.claim.count(),
+          prisma.debtor.count(),
+          prisma.nota.count(),
+          prisma.masterContract.count(),
+          prisma.bordero.count(),
+          prisma.batch.count(),
+          prisma.contract.count(),
+        ]);
+
+        const database = {
+          masterContract, batch, debtor, bordero, claim, subrogation,
+          nota, record, document, invoice, payment, paymentIntent,
+          debitCreditNote, reconciliation, contractRevise, debtorRevise,
+          reviseLog, auditLog, notification, contract,
+        };
+
+        // Count S3 files per prefix
+        const s3Prefixes = ['master-contract/', 'claim/', 'batch/', 'subrogation/'];
+        const s3 = {};
+        for (const prefix of s3Prefixes) {
+          try {
+            const files = await minioService.listFilesByPath(prefix);
+            s3[prefix] = files.length;
+          } catch {
+            s3[prefix] = 0;
+          }
+        }
+
+        const totalDb = Object.values(database).reduce((s, v) => s + v, 0);
+        const totalS3 = Object.values(s3).reduce((s, v) => s + v, 0);
+
+        return reply.send({
+          success: true,
+          data: { database, s3, totalDb, totalS3 },
+        });
+      } catch (err) {
+        request.log.error(err, 'dev-tools data-counts failed');
+        return reply.status(500).send({
+          success: false,
+          message: `Failed to fetch counts: ${err.message}`,
+        });
+      }
+    }
+  );
+
   fastify.delete(
     '/dev-tools/reset-all-data',
     { preHandler: fastify.authenticate },
