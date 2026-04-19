@@ -531,8 +531,24 @@ export class EntityRepository {
     }
 
     if (prisma.nota && entity === 'Nota') {
-      const total = await prisma.nota.count();
-      const rows = await prisma.nota.findMany({ ...paginationOpts, orderBy: buildOrderBy(sortBy || 'nota_number') });
+      const where = {};
+      if (filters) {
+        if (filters.notaType && filters.notaType !== 'all') {
+          if (filters.notaType === 'Batch') {
+            where.nota_type = { in: ['Batch', 'INVOICE'] };
+          } else {
+            where.nota_type = filters.notaType;
+          }
+        }
+        if (filters.contract && filters.contract !== 'all') {
+          where.contract_id = filters.contract;
+        }
+        if (filters.status && filters.status !== 'all') {
+          where.status = filters.status;
+        }
+      }
+      const total = await prisma.nota.count({ where });
+      const rows = await prisma.nota.findMany({ where, ...paginationOpts, orderBy: buildOrderBy(sortBy || 'nota_number') });
       return { data: rows.map((r) => ({ id: r.nota_number, ...r })), total };
     }
 
