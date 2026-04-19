@@ -980,7 +980,7 @@ export default class EntityService {
   }
 
   async update(entity, id, payload, context = {}) {
-    // For Nota updates, validate BRINS roles only
+    // For Nota updates, validate BRINS roles for user_nota_number edits
     if (entity === 'Nota') {
       const userRoles = context?.user?.application_roles || [];
       const isBrinsRole = userRoles.some(r => {
@@ -988,8 +988,8 @@ export default class EntityService {
         return ['approver-brins-role', 'checker-brins-role', 'maker-brins-role'].includes(normalizedRole);
       });
       
-      if (!isBrinsRole) {
-        const error = new Error('Only BRINS roles can update Nota status');
+      if (!isBrinsRole && 'user_nota_number' in payload) {
+        const error = new Error('Only BRINS roles can edit the nota number');
         error.statusCode = 403;
         throw error;
       }
