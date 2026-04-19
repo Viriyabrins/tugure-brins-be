@@ -99,7 +99,7 @@ export default class FileController {
    */
   async deleteFile(request, reply) {
     try {
-      const { key } = request.params;
+      const key = request.query.key;
 
       if (!key) {
         return sendError(reply, { message: 'File key is required' }, 400);
