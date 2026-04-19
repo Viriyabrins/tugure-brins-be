@@ -680,6 +680,7 @@ async function processBulkDebtorActionBackground(jobId, action, queryFilters, re
     let failedCount = 0;
     const errors = [];
     let totalNetPremi = 0;
+    let hasFinalApproval = false;
 
     const auditActor = {
       user_email: user?.email || 'system',
@@ -698,6 +699,7 @@ async function processBulkDebtorActionBackground(jobId, action, queryFilters, re
       if (action === 'check') {
         result = await DebtorService.processDebtorCheck(debtor.id, auditActor, { emitNotification: false });
       } else if (action === 'approve') {
+        if (debtor.status === 'CHECKED_TUGURE') hasFinalApproval = true;
         result = await DebtorService.processDebtorApproval(debtor.id, remarks, auditActor, debtor.contract_id, { emitNotification: false });
         if (result.success) {
           totalNetPremi += parseFloat(debtor.net_premi) || 0;
@@ -734,8 +736,8 @@ async function processBulkDebtorActionBackground(jobId, action, queryFilters, re
       }
     }
 
-    // Create Nota if action is approve and debtors were successfully processed
-    if (action === 'approve' && processedCount > 0 && batchId && actualContractId) {
+    // Create Nota only on Tugure final approval (CHECKED_TUGURE → APPROVED)
+    if (action === 'approve' && hasFinalApproval && processedCount > 0 && batchId && actualContractId) {
       try {
         const notaNumber = `NOTA-${actualContractId}-${Date.now()}`;
         // Check if nota already exists for this batch
