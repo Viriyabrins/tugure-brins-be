@@ -450,6 +450,7 @@ model MasterContract {
 
 model Nota {
   nota_number         String  @id
+  user_nota_number    String? @unique
   nota_type           String
   reference_id        String
   contract_id         String
