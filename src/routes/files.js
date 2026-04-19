@@ -8,8 +8,8 @@ export default async function (fastify) {
     return fileController.uploadFile(request, reply);
   });
 
-  // Delete file
-  fastify.delete('/files/:key', async (request, reply) => {
+  // Delete file (key passed as query param to avoid path-segment encoding issues)
+  fastify.delete('/files', async (request, reply) => {
     return fileController.deleteFile(request, reply);
   });
 
