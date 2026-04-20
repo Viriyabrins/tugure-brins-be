@@ -81,59 +81,52 @@ export default async function (fastify) {
     { preHandler: fastify.authenticate },
     async (request, reply) => {
       try {
-        const dbResults = await prisma.$transaction(async (tx) => {
-          // Tier 1: No dependencies
-          const auditLog = await tx.auditLog.deleteMany();
-          const notification = await tx.notification.deleteMany();
-
-          // Tier 2: No FK enforcement
-          const document = await tx.document.deleteMany();
-          const debitCreditNote = await tx.debitCreditNote.deleteMany();
-          const invoice = await tx.invoice.deleteMany();
-          const paymentIntent = await tx.paymentIntent.deleteMany();
-          const payment = await tx.payment.deleteMany();
-          const reconciliation = await tx.reconciliation.deleteMany();
-          const contractRevise = await tx.contractRevise.deleteMany();
-          const reviseLog = await tx.reviseLog.deleteMany();
-          const debtorRevise = await tx.debtorRevise.deleteMany();
-
-          // Tier 3: FK children
-          const record = await tx.record.deleteMany();
-          const subrogation = await tx.subrogation.deleteMany();
-          const claim = await tx.claim.deleteMany();
-
-          // Tier 4: FK parents
-          const debtor = await tx.debtor.deleteMany();
-          const nota = await tx.nota.deleteMany();
-          const masterContract = await tx.masterContract.deleteMany();
-          const bordero = await tx.bordero.deleteMany();
-          const batch = await tx.batch.deleteMany();
-
-          // Tier 5: Reference tables
-          const contract = await tx.contract.deleteMany();
-
-          return {
-            auditLog: auditLog.count,
-            notification: notification.count,
-            document: document.count,
-            debitCreditNote: debitCreditNote.count,
-            invoice: invoice.count,
-            paymentIntent: paymentIntent.count,
-            payment: payment.count,
-            reconciliation: reconciliation.count,
-            contractRevise: contractRevise.count,
-            reviseLog: reviseLog.count,
-            debtorRevise: debtorRevise.count,
-            record: record.count,
-            subrogation: subrogation.count,
-            claim: claim.count,
-            debtor: debtor.count,
-            nota: nota.count,
-            masterContract: masterContract.count,
-            bordero: bordero.count,
-            batch: batch.count,
-            contract: contract.count,
-          };
+        const dbResults = await prisma.$transaction((tx) => {
+          return Promise.all([
+            tx.auditLog.deleteMany(),
+            tx.notification.deleteMany(),
+            tx.document.deleteMany(),
+            tx.debitCreditNote.deleteMany(),
+            tx.invoice.deleteMany(),
+            tx.paymentIntent.deleteMany(),
+            tx.payment.deleteMany(),
+            tx.reconciliation.deleteMany(),
+            tx.contractRevise.deleteMany(),
+            tx.reviseLog.deleteMany(),
+            tx.debtorRevise.deleteMany(),
+            tx.record.deleteMany(),
+            tx.subrogation.deleteMany(),
+            tx.claim.deleteMany(),
+            tx.debtor.deleteMany(),
+            tx.nota.deleteMany(),
+            tx.masterContract.deleteMany(),
+            tx.bordero.deleteMany(),
+            tx.batch.deleteMany(),
+            tx.contract.deleteMany(),
+          ]).then((results) => {
+            return {
+              auditLog: results[0].count,
+              notification: results[1].count,
+              document: results[2].count,
+              debitCreditNote: results[3].count,
+              invoice: results[4].count,
+              paymentIntent: results[5].count,
+              payment: results[6].count,
+              reconciliation: results[7].count,
+              contractRevise: results[8].count,
+              reviseLog: results[9].count,
+              debtorRevise: results[10].count,
+              record: results[11].count,
+              subrogation: results[12].count,
+              claim: results[13].count,
+              debtor: results[14].count,
+              nota: results[15].count,
+              masterContract: results[16].count,
+              bordero: results[17].count,
+              batch: results[18].count,
+              contract: results[19].count,
+            };
+          });
         });
 
         // Delete S3 files from known prefixes
