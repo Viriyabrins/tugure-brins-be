@@ -284,8 +284,8 @@ export class EntityRepository {
         }
       }
       const total = await prisma.debtor.count({ where });
-      const rows = await prisma.debtor.findMany({ where, ...paginationOpts, orderBy: buildOrderBy(sortBy) });
-      return { data: rows.map((r) => ({ id: r.id, ...r })), total };
+      const rows = await prisma.debtor.findMany({ where, ...paginationOpts, orderBy: buildOrderBy(sortBy), include: { batch: { select: { source_filename: true, uploaded_date: true } } } });
+      return { data: rows.map((r) => ({ id: r.id, ...r, batch_source_filename: r.batch?.source_filename || null, batch_uploaded_date: r.batch?.uploaded_date || null })), total };
     }
 
     if (prisma.batch && entity === 'Batch') {

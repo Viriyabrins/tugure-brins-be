@@ -709,6 +709,9 @@ export default class EntityService {
           // Set uploaded_by and uploaded_date for all contracts (both new and revise modes)
           row.uploaded_by = actor.user_email;
           row.uploaded_date = new Date();
+          if (payload.source_filename) {
+            row.source_filename = payload.source_filename;
+          }
 
           try {
             const created = await tx.masterContract.create({ data: row });
