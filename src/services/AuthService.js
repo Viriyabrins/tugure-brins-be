@@ -19,7 +19,8 @@ const decodeJwtPayload = (jwt) => {
 
 const DOMAIN_REALM_MAP = {
   'brins.co.id': 'brins',
-  'tugure.co.id': 'tugure',
+  // 'tugure.co.id': 'tugure',
+  'tugu-re.com': 'tugure',
 };
 
 export default class AuthService {
