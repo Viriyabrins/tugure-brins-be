@@ -64,6 +64,7 @@ model Batch {
   revision_reason         String?
   uploaded_by             String?
   uploaded_date           DateTime?
+  source_filename         String?
   premium                 Decimal? @db.Decimal(25, 2)
   commission              Decimal? @db.Decimal(25, 2)
   claim                   Decimal? @db.Decimal(25, 2)
@@ -125,6 +126,7 @@ model Claim {
   reviewed_by              String?
   review_date              DateTime?
   batch_uploaded_by        String?
+  source_filename          String?
   @@map("claim")
 }
 
@@ -444,6 +446,7 @@ model MasterContract {
   revision_reason            String?
   uploaded_by                String?
   uploaded_date              DateTime?
+  source_filename            String?
 
   @@map("mastercontract")
 }
