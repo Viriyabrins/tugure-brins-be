@@ -356,6 +356,24 @@ export default class EntityService {
       // Don't block validation if debtor fetch fails - treat as warning
     }
 
+    // Build a set of existing (policy_no, nomor_peserta) pairs from claims to detect duplicates
+    let existingClaimPairs = new Set();
+    try {
+      const allClaims = await prisma.claim.findMany({
+        select: { policy_no: true, nomor_peserta: true },
+      });
+
+      for (const claim of allClaims) {
+        const key = `${String(claim.policy_no || '').trim().toLowerCase()}||${String(claim.nomor_peserta || '').trim().toLowerCase()}`;
+        existingClaimPairs.add(key);
+      }
+    } catch (err) {
+      console.error('Error fetching claims for duplicate check:', err);
+    }
+
+    // Track (policy_no, nomor_peserta) within the uploaded file to detect in-file duplicates
+    const seenInFile = new Map();
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i] || {};
       const rowNum = row.excelRow || i + 2;
@@ -396,6 +414,31 @@ export default class EntityService {
             value: `policy_no=${row.policy_no}, nomor_peserta=${row.nomor_peserta}`,
             expected: 'Must exist in debtors',
           });
+        }
+      }
+
+      // Check for duplicate claim already existing in the database
+      const claimPairKey = `${String(row.policy_no || '').trim().toLowerCase()}||${String(row.nomor_peserta || '').trim().toLowerCase()}`;
+      if (row.policy_no && existingClaimPairs.has(claimPairKey)) {
+        errors.push({
+          row: rowNum,
+          field: 'policy_no',
+          value: `policy_no=${row.policy_no}, nomor_peserta=${row.nomor_peserta}`,
+          expected: 'Claim already exists for this policy_no and nomor_peserta',
+        });
+      }
+
+      // Check for duplicate within the uploaded file
+      if (row.policy_no) {
+        if (seenInFile.has(claimPairKey)) {
+          errors.push({
+            row: rowNum,
+            field: 'policy_no',
+            value: `policy_no=${row.policy_no}, nomor_peserta=${row.nomor_peserta}`,
+            expected: `Duplicate in file (first seen at row ${seenInFile.get(claimPairKey)})`,
+          });
+        } else {
+          seenInFile.set(claimPairKey, rowNum);
         }
       }
     }
@@ -666,6 +709,9 @@ export default class EntityService {
           // Set uploaded_by and uploaded_date for all contracts (both new and revise modes)
           row.uploaded_by = actor.user_email;
           row.uploaded_date = new Date();
+          if (payload.source_filename) {
+            row.source_filename = payload.source_filename;
+          }
 
           try {
             const created = await tx.masterContract.create({ data: row });
@@ -971,6 +1017,23 @@ export default class EntityService {
     const safePayload = entity === 'AuditLog'
       ? this.enforceAuditActor(payload, context)
       : payload;
+
+    // Prevent duplicate claims by policy_no + nomor_peserta
+    if (entity === 'Claim' && safePayload.policy_no) {
+      const existing = await prisma.claim.findFirst({
+        where: {
+          policy_no: String(safePayload.policy_no).trim(),
+          nomor_peserta: String(safePayload.nomor_peserta || '').trim(),
+        },
+      });
+      if (existing) {
+        const error = new Error(
+          `A claim already exists for policy_no="${safePayload.policy_no}" and nomor_peserta="${safePayload.nomor_peserta || ''}". Duplicate claims are not allowed.`
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+    }
 
     const record = await this.entityRepository.create(entity, safePayload);
     if (record && record.payload && typeof record.payload === 'object') {
