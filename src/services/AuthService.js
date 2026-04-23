@@ -19,6 +19,7 @@ const decodeJwtPayload = (jwt) => {
 
 const DOMAIN_REALM_MAP = {
   'brins.co.id': 'brins',
+  'ibsrisk.com': 'brins',
   // 'tugure.co.id': 'tugure',
   'tugu-re.com': 'tugure',
 };
