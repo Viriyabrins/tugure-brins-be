@@ -98,7 +98,15 @@ export default class EntityController {
 
   async delete(request, reply) {
     try {
-      const entity = await this.entityService.delete(request.params.entityName, request.params.id);
+      const entity = await this.entityService.delete(
+        request.params.entityName,
+        request.params.id,
+        {
+          user: request.user,
+          ipAddress: request.ip,
+          headers: request.headers,
+        }
+      );
       return sendSuccess(reply, entity, 'Entity removed');
     } catch (error) {
       return sendError(reply, error, error.statusCode || 404);
