@@ -1,5 +1,7 @@
 import prisma from '../prisma/client.js';
 
+const EMAIL_TEMPLATE_ADMIN_ROLES = ['admin-brins-role', 'admin-tugure-role'];
+
 export default class EntityService {
   constructor({ entityRepository }) {
     this.entityRepository = entityRepository;
@@ -96,6 +98,34 @@ export default class EntityService {
       user_role: actor.user_role,
       ip_address: payload?.ip_address || context?.ipAddress || null,
     };
+  }
+
+  getNormalizedUserRoles(context = {}) {
+    const user = context?.user || {};
+    const roles = [
+      ...(Array.isArray(user.application_roles) ? user.application_roles : []),
+      ...(Array.isArray(user.roles) ? user.roles : []),
+      ...(user.role ? [user.role] : []),
+    ];
+
+    return [...new Set(
+      roles
+        .map((role) => String(role || '').trim().toLowerCase())
+        .filter(Boolean)
+    )];
+  }
+
+  enforceEmailTemplateAdmin(entity, context = {}, operation = 'manage') {
+    if (entity !== 'EmailTemplate') return;
+
+    const roles = this.getNormalizedUserRoles(context);
+    const isAllowed = EMAIL_TEMPLATE_ADMIN_ROLES.some((role) => roles.includes(role));
+
+    if (!isAllowed) {
+      const error = new Error(`Only admin-brins-role or admin-tugure-role can ${operation} email templates.`);
+      error.statusCode = 403;
+      throw error;
+    }
   }
 
   buildReadableError(error, fallbackMessage = 'Operation failed') {
@@ -1014,6 +1044,8 @@ export default class EntityService {
   }
 
   async create(entity, payload, context = {}) {
+    this.enforceEmailTemplateAdmin(entity, context, 'create');
+
     const safePayload = entity === 'AuditLog'
       ? this.enforceAuditActor(payload, context)
       : payload;
@@ -1043,6 +1075,8 @@ export default class EntityService {
   }
 
   async update(entity, id, payload, context = {}) {
+    this.enforceEmailTemplateAdmin(entity, context, 'update');
+
     // For Nota updates, validate BRINS roles for user_nota_number edits
     if (entity === 'Nota') {
       const userRoles = context?.user?.application_roles || [];
@@ -1621,7 +1655,9 @@ export default class EntityService {
     }
   }
 
-  async delete(entity, id) {
+  async delete(entity, id, context = {}) {
+    this.enforceEmailTemplateAdmin(entity, context, 'delete');
+
     const record = await this.entityRepository.delete(entity, id);
     if (!record) {
       const error = new Error(`Unable to delete ${entity} ${id}`);

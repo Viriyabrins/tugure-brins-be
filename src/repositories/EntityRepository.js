@@ -486,6 +486,9 @@ export class EntityRepository {
         if (filters.object_type && filters.object_type !== 'all') {
           where.object_type = filters.object_type;
         }
+        if (filters.template_scope && filters.template_scope !== 'all') {
+          where.template_scope = filters.template_scope;
+        }
       }
       const total = await prisma.emailTemplate.count({ where });
       const rows = await prisma.emailTemplate.findMany({ where, ...paginationOpts, orderBy: buildOrderBy(sortBy || 'id') });

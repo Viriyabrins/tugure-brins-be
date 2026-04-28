@@ -307,6 +307,9 @@ model EmailTemplate {
   status_from    String?
   status_to      String
   recipient_role String
+  template_scope String  @default("WORKFLOW")
+  workflow_action String?
+  workflow_audience String?
   email_subject  String
   email_body     String
   is_active      Boolean @default(true)
