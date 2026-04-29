@@ -1,11 +1,10 @@
 import prisma from '../prisma/client.js';
+import { createNotificationFanout } from './NotificationDispatchService.js';
 
 /**
  * DebtorService: Encapsulates business logic for debtor actions
  * Used by both individual and bulk operations
  */
-
-const ALL_ROLES = ['maker-brins-role', 'checker-brins-role', 'approver-brins-role', 'checker-tugure-role', 'approver-tugure-role'];
 
 /**
  * Process single debtor CHECK action
@@ -90,18 +89,14 @@ export async function processDebtorCheck(debtorId, auditActor = {}, options = {}
     // Create notifications for all roles (skip when caller disables emitNotification)
     if (emitNotification) {
       try {
-        for (const role of ALL_ROLES) {
-          await prisma.notification.create({
-            data: {
-              title: newStatus === 'CHECKED_BRINS' ? 'Debtor Checked by BRINS' : 'Debtor Checked by Tugure',
-              message: `${actionType} (${auditActor.user_email || 'system'}) checked debtor ${debtor.nama_peserta}.`,
-              type: 'INFO',
-              module: 'DEBTOR',
-              reference_id: debtor.batch_id,
-              target_role: role,
-            },
-          });
-        }
+        await createNotificationFanout({
+          title: newStatus === 'CHECKED_BRINS' ? 'Debtor Checked by BRINS' : 'Debtor Checked by Tugure',
+          message: `${actionType} (${auditActor.user_email || 'system'}) checked debtor ${debtor.nama_peserta}.`,
+          type: 'INFO',
+          module: 'DEBTOR',
+          reference_id: debtor.batch_id,
+          target_role: 'ALL',
+        });
       } catch (notifError) {
         console.warn(`Failed to create notifications for debtor ${debtorId}:`, notifError);
       }
@@ -223,18 +218,14 @@ export async function processDebtorApproval(debtorId, remarks = '', auditActor =
     // Create notifications (skip when caller disables emitNotification)
     if (emitNotification) {
       try {
-        for (const role of ALL_ROLES) {
-          await prisma.notification.create({
-            data: {
-              title: newStatus === 'APPROVED_BRINS' ? 'Debtor Approved by BRINS' : 'Debtor Approved (Final)',
-              message: `${actionType} (${auditActor.user_email || 'system'}) approved debtor ${debtor.nama_peserta}.`,
-              type: 'INFO',
-              module: 'DEBTOR',
-              reference_id: debtorId,
-              target_role: role,
-            },
-          });
-        }
+        await createNotificationFanout({
+          title: newStatus === 'APPROVED_BRINS' ? 'Debtor Approved by BRINS' : 'Debtor Approved (Final)',
+          message: `${actionType} (${auditActor.user_email || 'system'}) approved debtor ${debtor.nama_peserta}.`,
+          type: 'INFO',
+          module: 'DEBTOR',
+          reference_id: debtorId,
+          target_role: 'ALL',
+        });
       } catch (notifError) {
         console.warn(`Failed to create notifications for debtor ${debtorId}:`, notifError);
       }
@@ -303,18 +294,14 @@ export async function processDebtorRevision(debtorId, remarks = '', auditActor =
     // Create notifications (skip when caller disables emitNotification)
     if (emitNotification) {
       try {
-        for (const role of ALL_ROLES) {
-          await prisma.notification.create({
-            data: {
-              title: 'Debtor Marked for Revision',
-              message: `${auditActor.user_email || 'system'} marked debtor ${debtor.nama_peserta} for revision.`,
-              type: 'WARNING',
-              module: 'DEBTOR',
-              reference_id: debtorId,
-              target_role: role,
-            },
-          });
-        }
+        await createNotificationFanout({
+          title: 'Debtor Marked for Revision',
+          message: `${auditActor.user_email || 'system'} marked debtor ${debtor.nama_peserta} for revision.`,
+          type: 'WARNING',
+          module: 'DEBTOR',
+          reference_id: debtorId,
+          target_role: 'ALL',
+        });
       } catch (notifError) {
         console.warn(`Failed to create notifications for debtor ${debtorId}:`, notifError);
       }
@@ -456,18 +443,14 @@ export async function processBatchDebtorWorkflowAction(debtorIds, action, remark
   if (processedCount > 0) {
     const titleMap = { check: 'Checked by Tugure', approve: 'Approved (Final)', revise: 'Marked for Revision' };
     try {
-      for (const role of ALL_ROLES) {
-        await prisma.notification.create({
-          data: {
-            title: `Debtors ${titleMap[action] || action}`,
-            message: `${auditActor.user_email || 'system'} performed ${action} on ${processedCount} debtor(s).`,
-            type: action === 'revise' ? 'WARNING' : 'INFO',
-            module: 'DEBTOR',
-            reference_id: batchId || debtorIds[0],
-            target_role: role,
-          },
-        });
-      }
+      await createNotificationFanout({
+        title: `Debtors ${titleMap[action] || action}`,
+        message: `${auditActor.user_email || 'system'} performed ${action} on ${processedCount} debtor(s).`,
+        type: action === 'revise' ? 'WARNING' : 'INFO',
+        module: 'DEBTOR',
+        reference_id: batchId || debtorIds[0],
+        target_role: 'ALL',
+      });
     } catch (notifErr) {
       console.warn('Failed to create batch notification:', notifErr);
     }

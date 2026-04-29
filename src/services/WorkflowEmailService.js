@@ -229,7 +229,7 @@ export function sendApproveBrinsEmail({ actorEmail, uploaderEmail, checkerEmail,
 
   Promise.resolve()
     .then(async () => {
-      const tugureCheckers = await emailsForRole('tugure', 'tugure-checker-role');
+      const tugureCheckers = await emailsForRole('tugure', 'checker-tugure-role');
 
       if (actorEmail) {
         await scheduleRenderedEmail({
@@ -294,7 +294,7 @@ export function sendCheckTugureEmail({
 
   Promise.resolve()
     .then(async () => {
-      const tugureApprovers = await emailsForRole('tugure', 'tugure-approver-role');
+      const tugureApprovers = await emailsForRole('tugure', 'approver-tugure-role');
 
       if (actorEmail) {
         await scheduleRenderedEmail({

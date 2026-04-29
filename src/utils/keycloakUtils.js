@@ -236,6 +236,7 @@ export async function getUsersByRole(realm, roleName) {
   const users = (members || [])
     .filter(u => u.email)
     .map(u => ({
+      id: u.id,
       email: u.email,
       name: u.firstName ? `${u.firstName} ${u.lastName || ''}`.trim() : u.username,
     }));

@@ -1,8 +1,14 @@
 import prisma from '../prisma/client.js';
 
 export class NotificationRepository {
-  async list({ target_role, unreadOnly, limit = 100, page = 1 } = {}) {
+  async list({ target_role, target_user, unreadOnly, limit = 100, page = 1 } = {}) {
     const where = {};
+    if (target_user) {
+      where.OR = [
+        { target_user },
+        { AND: [{ target_user: null }, { target_role: 'ALL' }] },
+      ];
+    }
     if (target_role) {
       if (typeof target_role === 'string' && target_role.includes(',')) {
         where.target_role = { in: target_role.split(',').map(r => r.trim()) };
@@ -33,7 +39,8 @@ export class NotificationRepository {
       type = 'INFO',
       module = 'platform',
       reference_id = null,
-      target_role = 'ALL'
+      target_role = 'ALL',
+      target_user = null
     } = payload;
     // Prevent simple duplicate notifications: if a notification with same
     // reference_id, target_role, module and title already exists, return it
@@ -43,6 +50,7 @@ export class NotificationRepository {
       const existing = await prisma.notification.findFirst({
         where: {
           reference_id,
+          target_user,
           target_role,
           module,
           title,
@@ -62,7 +70,8 @@ export class NotificationRepository {
         type,
         module,
         reference_id,
-        target_role
+        target_role,
+        target_user
       }
     });
   }

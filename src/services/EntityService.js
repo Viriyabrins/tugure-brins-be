@@ -1,4 +1,10 @@
 import prisma from '../prisma/client.js';
+import {
+  createNotificationFanout,
+  createWorkflowAudienceNotifications,
+  resolveTargetUsersFromRoles,
+} from './NotificationDispatchService.js';
+import { WORKFLOW_ACTIONS, WORKFLOW_AUDIENCES, moduleLabel } from './WorkflowEmailTemplateService.js';
 
 const EMAIL_TEMPLATE_ADMIN_ROLES = ['admin-brins-role', 'admin-tugure-role'];
 
@@ -779,23 +785,54 @@ export default class EntityService {
           },
         });
 
-        await tx.notification.create({
-          data: {
-            title: uploadMode === 'revise' ? 'Master Contract Revision Uploaded' : 'Master Contract Uploaded',
-            message: `${createdContracts.length} master contract(s) uploaded successfully (${uploadMode}).`,
-            type: 'INFO',
-            module: 'CONFIG',
-            reference_type: 'MasterContract',
-            reference_id: createdContracts[0]?.contract_id || null,
-            target_role: 'ALL',
-          },
-        });
-
         return {
           createdCount: createdContracts.length,
           contracts: createdContracts,
         };
       });
+
+      try {
+        const referenceId = result.contracts?.[0]?.contract_id || null;
+        const label = moduleLabel('MC');
+        const ctx = {
+          uploaderEmail: actor.user_email,
+          batchId: referenceId,
+          module: 'MC',
+          count: result.createdCount,
+        };
+
+        if (context?.user?.id) {
+          await createWorkflowAudienceNotifications({
+            workflowAction: WORKFLOW_ACTIONS.UPLOAD,
+            workflowAudience: WORKFLOW_AUDIENCES.UPLOADER,
+            ctx,
+            fallbackSubject: `You Have Successfully Uploaded ${label}`,
+            fallbackBody: `<p>Your ${label.toLowerCase()} upload for batch <strong>{batch_id}</strong>{record_count_text} has been submitted successfully and is awaiting BRINS Checker review.</p>`,
+            targetUsers: [context.user.id],
+            targetRole: 'BRINS',
+            module: 'CONFIG',
+            referenceType: 'MasterContract',
+            referenceId,
+          });
+        }
+
+        const checkers = await resolveTargetUsersFromRoles(['checker-brins-role']);
+        await createWorkflowAudienceNotifications({
+          workflowAction: WORKFLOW_ACTIONS.UPLOAD,
+          workflowAudience: WORKFLOW_AUDIENCES.BRINS_CHECKERS,
+          ctx,
+          fallbackSubject: `New ${label} Uploaded - Action Required`,
+          fallbackBody: `<p>A new ${label.toLowerCase()} batch <strong>{batch_id}</strong>{record_count_text} has been uploaded by {uploader_display} and is awaiting your review.</p>`,
+          defaults: { uploaderDisplay: actor.user_email || 'a maker' },
+          targetUsers: checkers.map((u) => u.id),
+          targetRole: 'BRINS',
+          module: 'CONFIG',
+          referenceType: 'MasterContract',
+          referenceId,
+        });
+      } catch (notifErr) {
+        console.warn('[EntityService] MC upload notification dispatch failed:', notifErr.message);
+      }
 
       return result;
     } catch (error) {
@@ -822,7 +859,7 @@ export default class EntityService {
     }
 
     try {
-      return await prisma.$transaction(async (tx) => {
+      const updated = await prisma.$transaction(async (tx) => {
         const existing = await tx.masterContract.findUnique({ where: { contract_id: id } });
         if (!existing) {
           const error = new Error(`Master Contract ${id} not found.`);
@@ -861,23 +898,27 @@ export default class EntityService {
           },
         });
 
-        await tx.notification.create({
-          data: {
-            title: action === 'REVISION' ? 'Contract Needs Revision' : 'Contract Approved',
-            message:
-              action === 'REVISION'
-                ? `Master Contract ${id} needs revision: ${remarks || '-'}`
-                : `Master Contract ${id} has been approved`,
-            type: action === 'REVISION' ? 'WARNING' : 'INFO',
-            module: 'CONFIG',
-            reference_type: 'MasterContract',
-            reference_id: id,
-            target_role: 'ALL',
-          },
-        });
-
         return updated;
       });
+
+      try {
+        await createNotificationFanout({
+          title: action === 'REVISION' ? 'Contract Needs Revision' : 'Contract Approved',
+          message:
+            action === 'REVISION'
+              ? `Master Contract ${id} needs revision: ${remarks || '-'}`
+              : `Master Contract ${id} has been approved`,
+          type: action === 'REVISION' ? 'WARNING' : 'INFO',
+          module: 'CONFIG',
+          reference_type: 'MasterContract',
+          reference_id: id,
+          target_role: 'ALL',
+        });
+      } catch (notifErr) {
+        console.warn('[EntityService] MC approval notification dispatch failed:', notifErr.message);
+      }
+
+      return updated;
     } catch (error) {
       throw this.buildReadableError(error, 'Contract approval process failed.');
     }
@@ -976,27 +1017,29 @@ export default class EntityService {
           },
         });
 
-        await tx.notification.create({
-          data: {
-            title: action === 'REVISION' ? 'Contract Needs Revision' : `Contract ${action.replace('_', ' ')}`,
-            message: action === 'REVISION'
-              ? `Master Contract ${id} needs revision: ${remarks || '-'}`
-              : `Master Contract ${id} status updated to ${transition.to}`,
-            type: action === 'REVISION' ? 'WARNING' : 'INFO',
-            module: 'CONFIG',
-            reference_type: 'MasterContract',
-            reference_id: id,
-            target_role: 'ALL',
-          },
-        });
-
         return contract;
       });
+
+      try {
+        await createNotificationFanout({
+          title: action === 'REVISION' ? 'Contract Needs Revision' : `Contract ${action.replace('_', ' ')}`,
+          message: action === 'REVISION'
+            ? `Master Contract ${id} needs revision: ${remarks || '-'}`
+            : `Master Contract ${id} status updated to ${TRANSITIONS[action].to}`,
+          type: action === 'REVISION' ? 'WARNING' : 'INFO',
+          module: 'CONFIG',
+          reference_type: 'MasterContract',
+          reference_id: id,
+          target_role: 'ALL',
+        });
+      } catch (notifErr) {
+        console.warn('[EntityService] MC workflow notification dispatch failed:', notifErr.message);
+      }
 
       // Fire-and-forget emails after transaction succeeds (lazy import to avoid circular deps)
       Promise.resolve().then(async () => {
         try {
-          const { default: WorkflowEmailService } = await import('./WorkflowEmailService.js');
+          const WorkflowEmailService = await import('./WorkflowEmailService.js');
           const contract = updated;
           const ctx = {
             actorEmail: actor.user_email,
@@ -1065,6 +1108,11 @@ export default class EntityService {
         error.statusCode = 409;
         throw error;
       }
+    }
+
+    if (entity === 'Notification') {
+      const created = await createNotificationFanout(payload);
+      return created[0] || null;
     }
 
     const record = await this.entityRepository.create(entity, safePayload);
@@ -1630,24 +1678,25 @@ export default class EntityService {
           },
         });
 
-        // Create notification
-        await tx.notification.create({
-          data: {
-            title: uploadMode === 'revise' ? 'Debtor Revision Uploaded' : 'Debtor Uploaded',
-            message: `${createdDebtors.length} debtor(s) uploaded successfully (${uploadMode}).`,
-            type: 'INFO',
-            module: 'DEBTOR',
-            reference_type: 'Debtor',
-            reference_id: createdDebtors[0]?.id || null,
-            target_role: 'ALL',
-          },
-        });
-
         return {
           createdCount: createdDebtors.length,
           debtors: createdDebtors,
         };
       });
+
+      try {
+        await createNotificationFanout({
+          title: uploadMode === 'revise' ? 'Debtor Revision Uploaded' : 'Debtor Uploaded',
+          message: `${result.createdCount} debtor(s) uploaded successfully (${uploadMode}).`,
+          type: 'INFO',
+          module: 'DEBTOR',
+          reference_type: 'Debtor',
+          reference_id: result.debtors?.[0]?.id || null,
+          target_role: 'ALL',
+        });
+      } catch (notifErr) {
+        console.warn('[EntityService] Debtor upload notification dispatch failed:', notifErr.message);
+      }
 
       return result;
     } catch (error) {

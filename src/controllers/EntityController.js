@@ -4,11 +4,9 @@ import * as jobQueue from '../utils/jobQueue.js';
 import * as DebtorService from '../services/DebtorService.js';
 import * as ClaimService from '../services/ClaimService.js';
 import prisma from '../prisma/client.js';
-import { NotificationRepository } from '../repositories/NotificationRepository.js';
 import * as WorkflowEmailService from '../services/WorkflowEmailService.js';
+import { createNotificationFanout } from '../services/NotificationDispatchService.js';
 import * as NotaService from '../services/NotaService.js';
-
-const ALL_ROLES = ['maker-brins-role', 'checker-brins-role', 'approver-brins-role', 'checker-tugure-role', 'approver-tugure-role'];
 
 export default class EntityController {
   constructor({ entityService }) {
@@ -793,19 +791,16 @@ async function processBulkDebtorActionBackground(jobId, action, queryFilters, re
     // Create batch-level notification (one per role) when job finishes and batchId is provided
     if (processedCount > 0 && batchId) {
       try {
-        const notifRepo = new NotificationRepository();
         const notifTitle = `Bulk ${action} completed for batch ${batchId}`;
         const notifMessage = `Bulk ${action} completed: ${processedCount} succeeded, ${failedCount} failed.`;
-        for (const role of ALL_ROLES) {
-          await notifRepo.create({
-            title: notifTitle,
-            message: notifMessage,
-            type: 'INFO',
-            module: 'DEBTOR',
-            reference_id: batchId,
-            target_role: role,
-          });
-        }
+        await createNotificationFanout({
+          title: notifTitle,
+          message: notifMessage,
+          type: 'INFO',
+          module: 'DEBTOR',
+          reference_id: batchId,
+          target_role: 'ALL',
+        });
       } catch (notifErr) {
         console.warn(`Failed to create batch notification for job ${jobId}:`, notifErr);
       }
