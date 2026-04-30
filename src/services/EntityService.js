@@ -1715,4 +1715,244 @@ export default class EntityService {
     }
     return { id: record.id };
   }
+
+  /**
+   * Validate raw rows from an uploaded Excel file for Subrogation.
+   * Each row is a plain object with string values as they come from the file parser.
+   * Returns an object { valid: boolean, errors: Array<{row, field, value, expected}> }.
+   */
+  async validateSubrogationRawRows(rows = []) {
+    const REQUIRED_FIELDS = [
+      'cedant_remarks', 'claim_no', 'policy_no', 'original_share_pct',
+      'contract_id', 'subrogation_amount', 'gross_tugu_amount',
+      'fee_tugu_amount', 'net_tugu_share', 'transferred_subrogation_amount',
+      'expense_fee_amount', 'dol_date', 'bdo_claim_date', 'bdo_premium_date',
+      'brins_remarks'
+    ];
+    const DATE_FIELDS = ['dol_date', 'bdo_claim_date', 'bdo_premium_date'];
+    const DECIMAL_FIELDS = [
+      'original_share_pct', 'subrogation_amount', 'gross_tugu_amount',
+      'fee_tugu_amount', 'net_tugu_share', 'transferred_subrogation_amount',
+      'expense_fee_amount'
+    ];
+
+    const isBlank = (v) => v === undefined || v === null || String(v).trim() === '';
+
+    const parseNum = (v) => {
+      let s = String(v).trim().replace(/\s/g, '');
+      if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+      else if (s.includes(',')) s = s.replace(',', '.');
+      const n = Number(s);
+      return Number.isNaN(n) ? null : n;
+    };
+
+    const errors = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] || {};
+      const rowNum = i + 1;
+
+      // Required-field check (empty / null not allowed)
+      for (const field of REQUIRED_FIELDS) {
+        if (isBlank(row[field])) {
+          errors.push({ row: rowNum, field, value: '', expected: 'Required (must not be empty)' });
+        }
+      }
+
+      // Date field validation
+      for (const field of DATE_FIELDS) {
+        const raw = row[field];
+        if (isBlank(raw)) continue;
+        // Accept Excel numeric serial dates (numbers)
+        if (typeof raw === 'number') continue;
+        const d = new Date(String(raw).trim());
+        if (Number.isNaN(d.getTime())) {
+          errors.push({ row: rowNum, field, value: String(raw), expected: 'Date (e.g. YYYY-MM-DD)' });
+        }
+      }
+
+      // Decimal field validation
+      for (const field of DECIMAL_FIELDS) {
+        const raw = row[field];
+        if (isBlank(raw)) continue;
+        const n = parseNum(raw);
+        if (n === null) {
+          errors.push({ row: rowNum, field, value: String(raw), expected: 'Number' });
+        }
+      }
+    }
+
+    // Domain validation: Check if claim_no and contract_id exist
+    if (errors.length === 0 && rows.length > 0) {
+      const claimNos = rows.map(row => String(row.claim_no || '').trim()).filter(Boolean);
+      const contractIds = rows.map(row => String(row.contract_id || '').trim()).filter(Boolean);
+
+      // Check claims exist
+      if (claimNos.length > 0) {
+        const existingClaims = await prisma.claim.findMany({
+          where: { claim_no: { in: claimNos } },
+          select: { claim_no: true }
+        });
+        const existingClaimNos = new Set(existingClaims.map(c => c.claim_no));
+
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          const claimNo = String(row.claim_no || '').trim();
+          if (claimNo && !existingClaimNos.has(claimNo)) {
+            errors.push({
+              row: i + 1,
+              field: 'claim_no',
+              value: claimNo,
+              expected: 'Claim must exist in database'
+            });
+          }
+        }
+      }
+
+      // Check master contracts exist
+      if (contractIds.length > 0) {
+        const existingContracts = await prisma.masterContract.findMany({
+          where: { contract_id: { in: contractIds } },
+          select: { contract_id: true }
+        });
+        const existingContractIds = new Set(existingContracts.map(c => c.contract_id));
+
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          const contractId = String(row.contract_id || '').trim();
+          if (contractId && !existingContractIds.has(contractId)) {
+            errors.push({
+              row: i + 1,
+              field: 'contract_id',
+              value: contractId,
+              expected: 'Master Contract must exist in database'
+            });
+          }
+        }
+      }
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
+
+  async uploadSubrogationsAtomic(payload = {}, context = {}) {
+    const subrogations = Array.isArray(payload.subrogations) ? payload.subrogations : [];
+    const actor = this.resolveAuditActor(context);
+
+    if (subrogations.length === 0) {
+      const error = new Error('Upload file is empty. No subrogation data to process.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const createdSubrogations = [];
+
+        for (let i = 0; i < subrogations.length; i += 1) {
+          const row = { ...(subrogations[i] || {}) };
+
+          // Remove parser tracking fields (not database fields)
+          delete row.excelRow;
+          delete row.uploaded_by;
+          delete row.uploaded_date;
+
+          // Generate subrogation_id
+          const timestamp = Date.now();
+          const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+          row.subrogation_id = `SBR-${timestamp}-${randomSuffix}`;
+
+          // Set default status and uploaded metadata
+          row.status = 'Draft';
+          row.uploaded_by = actor.user_email;
+          row.uploaded_date = new Date();
+
+          try {
+            const created = await tx.subrogation.create({ data: row });
+            createdSubrogations.push(created);
+          } catch (error) {
+            const wrappedError = this.buildReadableError(
+              error,
+              `Gagal menyimpan data pada baris ke-${i + 1}.`
+            );
+            if (!wrappedError.message.includes('baris ke-')) {
+              wrappedError.message = `Baris ke-${i + 1}: ${wrappedError.message}`;
+            }
+            throw wrappedError;
+          }
+        }
+
+        await tx.auditLog.create({
+          data: {
+            action: 'SUBROGATION_UPLOADED_BULK',
+            module: 'CLAIM',
+            entity_type: 'Subrogation',
+            entity_id: createdSubrogations.map((item) => item.subrogation_id).join(', '),
+            old_value: null,
+            new_value: JSON.stringify({
+              total_uploaded: createdSubrogations.length,
+              subrogation_ids: createdSubrogations.map((item) => item.subrogation_id),
+            }),
+            user_email: actor.user_email,
+            user_role: actor.user_role,
+            reason: 'Bulk upload from Subrogation Management',
+            ip_address: context?.ipAddress || null,
+          },
+        });
+
+        return {
+          createdCount: createdSubrogations.length,
+          subrogations: createdSubrogations,
+        };
+      });
+
+      // Send notifications (fire-and-forget)
+      try {
+        const referenceId = result.subrogations?.[0]?.subrogation_id || null;
+        const label = 'Subrogation';
+        const ctx = {
+          uploaderEmail: actor.user_email,
+          batchId: referenceId,
+          module: 'CLAIM',
+          count: result.createdCount,
+        };
+
+        if (context?.user?.id) {
+          await createWorkflowAudienceNotifications({
+            workflowAction: WORKFLOW_ACTIONS.UPLOAD,
+            workflowAudience: WORKFLOW_AUDIENCES.UPLOADER,
+            ctx,
+            fallbackSubject: `You Have Successfully Uploaded ${label}`,
+            fallbackBody: `<p>Your ${label.toLowerCase()} upload for batch <strong>{batch_id}</strong>{record_count_text} has been submitted successfully and is awaiting BRINS Checker review.</p>`,
+            targetUsers: [context.user.id],
+            targetRole: 'BRINS',
+            module: 'CLAIM',
+            referenceType: 'Subrogation',
+            referenceId,
+          });
+        }
+
+        const checkers = await resolveTargetUsersFromRoles(['checker-brins-role']);
+        await createWorkflowAudienceNotifications({
+          workflowAction: WORKFLOW_ACTIONS.UPLOAD,
+          workflowAudience: WORKFLOW_AUDIENCES.BRINS_CHECKERS,
+          ctx,
+          fallbackSubject: `New ${label} Uploaded - Action Required`,
+          fallbackBody: `<p>A new ${label.toLowerCase()} batch <strong>{batch_id}</strong>{record_count_text} has been uploaded by {uploader_display} and is awaiting your review.</p>`,
+          defaults: { uploaderDisplay: actor.user_email || 'a maker' },
+          targetUsers: checkers.map((u) => u.id),
+          targetRole: 'BRINS',
+          module: 'CLAIM',
+          referenceType: 'Subrogation',
+          referenceId,
+        });
+      } catch (notifErr) {
+        console.warn('[EntityService] Subrogation upload notification dispatch failed:', notifErr.message);
+      }
+
+      return result;
+    } catch (error) {
+      throw this.buildReadableError(error, 'Subrogation upload failed to process.');
+    }
+  }
 }

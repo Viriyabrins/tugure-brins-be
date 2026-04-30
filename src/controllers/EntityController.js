@@ -182,16 +182,22 @@ export default class EntityController {
 
   async validateSubrogation(request, reply) {
     try {
-      const result = this.entityService.validateSubrogationPayload(request.body || {});
+      const rows = Array.isArray(request.body?.rows) ? request.body.rows : [];
+      if (rows.length === 0) {
+        return sendError(reply, new Error('No data rows were submitted for validation.'), 400);
+      }
+      const result = await this.entityService.validateSubrogationRawRows(rows);
       if (!result.valid) {
         const summary = result.errors
-          .map((e) => `"${e.field}": value "${e.value}" is not a valid ${e.expected}`)
+          .slice(0, 20)
+          .map((e) => `Row ${e.row} – "${e.field}": value "${e.value}" is not a valid ${e.expected}`)
           .join('\n');
-        const error = new Error(`Subrogation validation failed:\n${summary}`);
+        const more = result.errors.length > 20 ? `\n... and ${result.errors.length - 20} more error(s).` : '';
+        const error = new Error(`Validation failed. ${result.errors.length} error(s) found:\n${summary}${more}`);
         error.statusCode = 422;
         return sendError(reply, error, 422);
       }
-      return sendSuccess(reply, { valid: true }, 'Validation successful.');
+      return sendSuccess(reply, { valid: true, rowCount: rows.length }, 'Validation successful.');
     } catch (error) {
       return sendError(reply, error, error.statusCode || 500);
     }
@@ -263,6 +269,39 @@ export default class EntityController {
         isReviseMode
           ? 'Revisi debtor berhasil diproses'
           : 'Debtors uploaded successfully'
+      );
+    } catch (error) {
+      return sendError(reply, error, error.statusCode || 500);
+    }
+  }
+
+  async uploadSubrogations(request, reply) {
+    try {
+      const result = await this.entityService.uploadSubrogationsAtomic(
+        request.body,
+        {
+          user: request.user,
+          ipAddress: request.ip,
+          headers: request.headers,
+        }
+      );
+
+      // Fire-and-forget upload email
+      const uploaderEmail = request.user?.email;
+      const firstSubrogationId = result.subrogations?.[0]?.subrogation_id;
+      if (firstSubrogationId && uploaderEmail) {
+        WorkflowEmailService.sendUploadEmail({
+          uploaderEmail,
+          batchId: firstSubrogationId,
+          module: 'CLAIM',
+          count: result.createdCount,
+        });
+      }
+
+      return sendCreated(
+        reply,
+        result,
+        'Subrogations uploaded successfully'
       );
     } catch (error) {
       return sendError(reply, error, error.statusCode || 500);

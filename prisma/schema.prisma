@@ -739,17 +739,25 @@ model SlaRule {
 }
 
 model Subrogation {
-  subrogation_id String   @id
-  claim_id        String
-  debtor_id       String
-  recovery_amount Decimal  @db.Decimal(25, 2)
-  recovery_date   DateTime
-  status          String   @default("Draft")
-  invoiced_by     String?
-  invoiced_date   DateTime?
-  closed_by       String?
-  closed_date     DateTime?
-  remarks         String?
+  subrogation_id                 String   @id
+  claim_no                       String
+  cedant_remarks                 String?
+  policy_no                      String?
+  original_share_pct             Decimal? @db.Decimal(5, 2)
+  contract_id                    String?
+  subrogation_amount             Decimal? @db.Decimal(25, 2)
+  gross_tugu_amount              Decimal? @db.Decimal(25, 2)
+  fee_tugu_amount                Decimal? @db.Decimal(25, 2)
+  net_tugu_share                 Decimal? @db.Decimal(25, 2)
+  transferred_subrogation_amount Decimal? @db.Decimal(25, 2)
+  expense_fee_amount             Decimal? @db.Decimal(25, 2)
+  dol_date                       DateTime?
+  bdo_claim_date                 DateTime?
+  bdo_premium_date               DateTime?
+  brins_remarks                  String?
+  status                         String   @default("Draft")
+  uploaded_by                    String?
+  uploaded_date                  DateTime?
   checked_by           String?
   checked_date         DateTime?
   approved_by_brins    String?
