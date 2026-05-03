@@ -81,53 +81,56 @@ export default async function (fastify) {
     { preHandler: fastify.authenticate },
     async (request, reply) => {
       try {
-        const dbResults = await prisma.$transaction((tx) => {
-          return Promise.all([
-            tx.auditLog.deleteMany(),
-            tx.notification.deleteMany(),
-            tx.document.deleteMany(),
-            tx.debitCreditNote.deleteMany(),
-            tx.invoice.deleteMany(),
-            tx.paymentIntent.deleteMany(),
-            tx.payment.deleteMany(),
-            tx.reconciliation.deleteMany(),
-            tx.contractRevise.deleteMany(),
-            tx.reviseLog.deleteMany(),
-            tx.debtorRevise.deleteMany(),
-            tx.record.deleteMany(),
-            tx.subrogation.deleteMany(),
-            tx.claim.deleteMany(),
-            tx.debtor.deleteMany(),
-            tx.nota.deleteMany(),
-            tx.masterContract.deleteMany(),
-            tx.bordero.deleteMany(),
-            tx.batch.deleteMany(),
-            tx.contract.deleteMany(),
-          ]).then((results) => {
-            return {
-              auditLog: results[0].count,
-              notification: results[1].count,
-              document: results[2].count,
-              debitCreditNote: results[3].count,
-              invoice: results[4].count,
-              paymentIntent: results[5].count,
-              payment: results[6].count,
-              reconciliation: results[7].count,
-              contractRevise: results[8].count,
-              reviseLog: results[9].count,
-              debtorRevise: results[10].count,
-              record: results[11].count,
-              subrogation: results[12].count,
-              claim: results[13].count,
-              debtor: results[14].count,
-              nota: results[15].count,
-              masterContract: results[16].count,
-              bordero: results[17].count,
-              batch: results[18].count,
-              contract: results[19].count,
-            };
-          });
-        });
+        const dbResults = await prisma.$transaction(
+          (tx) => {
+            return Promise.all([
+              tx.auditLog.deleteMany(),
+              tx.notification.deleteMany(),
+              tx.document.deleteMany(),
+              tx.debitCreditNote.deleteMany(),
+              tx.invoice.deleteMany(),
+              tx.paymentIntent.deleteMany(),
+              tx.payment.deleteMany(),
+              tx.reconciliation.deleteMany(),
+              tx.contractRevise.deleteMany(),
+              tx.reviseLog.deleteMany(),
+              tx.debtorRevise.deleteMany(),
+              tx.record.deleteMany(),
+              tx.subrogation.deleteMany(),
+              tx.claim.deleteMany(),
+              tx.debtor.deleteMany(),
+              tx.nota.deleteMany(),
+              tx.masterContract.deleteMany(),
+              tx.bordero.deleteMany(),
+              tx.batch.deleteMany(),
+              tx.contract.deleteMany(),
+            ]).then((results) => {
+              return {
+                auditLog: results[0].count,
+                notification: results[1].count,
+                document: results[2].count,
+                debitCreditNote: results[3].count,
+                invoice: results[4].count,
+                paymentIntent: results[5].count,
+                payment: results[6].count,
+                reconciliation: results[7].count,
+                contractRevise: results[8].count,
+                reviseLog: results[9].count,
+                debtorRevise: results[10].count,
+                record: results[11].count,
+                subrogation: results[12].count,
+                claim: results[13].count,
+                debtor: results[14].count,
+                nota: results[15].count,
+                masterContract: results[16].count,
+                bordero: results[17].count,
+                batch: results[18].count,
+                contract: results[19].count,
+              };
+            });
+          },
+          { timeout: 30000 } // 30 second timeout for reset operation
+        );
 
         // Delete S3 files from known prefixes
         const s3Prefixes = ['master-contract/', 'claim/', 'batch/', 'subrogation/'];
