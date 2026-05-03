@@ -65,6 +65,24 @@ export async function resolveTargetUsersFromRoles(targetRoles = []) {
   }));
 }
 
+/**
+ * Check if a user has enabled a specific notification type for a given channel
+ * @param {Object} userSettings - User's NotificationSetting record
+ * @param {string} notificationType - The notification type key (e.g., 'batch_status', 'claim_status')
+ * @param {string} channel - 'email' or 'inapp' (default: 'inapp')
+ * @returns {boolean} True if the user has enabled this notification for the channel
+ */
+function shouldSendNotification(userSettings, notificationType, channel = 'inapp') {
+  if (!userSettings) return true; // If no settings found, default to sending
+  
+  const fieldKey = channel === 'email' 
+    ? `email_notify_${notificationType}`
+    : `inapp_notify_${notificationType}`;
+  
+  // Default to true if field doesn't exist (backward compatibility)
+  return userSettings[fieldKey] !== false;
+}
+
 export async function createNotificationFanout(payload = {}, options = {}) {
   const {
     title,
@@ -76,6 +94,7 @@ export async function createNotificationFanout(payload = {}, options = {}) {
     action_url = null,
     target_user,
     target_role,
+    notificationType = null, // New parameter: e.g., 'batch_status', 'claim_status'
   } = payload;
 
   if (!title || !message) return [];
@@ -95,17 +114,61 @@ export async function createNotificationFanout(payload = {}, options = {}) {
 
   if (targetUsers.length === 0) return [];
 
-  const rows = targetUsers.map((userId) => ({
-    title,
-    message,
-    type,
-    module,
-    reference_id,
-    reference_type,
-    action_url,
-    target_user: userId,
-    target_role: target_role || null,
-  }));
+  // If notificationType is specified, check user preferences before creating notifications
+  const rows = [];
+  
+  if (notificationType) {
+    // Fetch all user settings to check preferences
+    for (const userId of targetUsers) {
+      try {
+        const userSettings = await prisma.notificationSetting.findUnique({
+          where: { keycloak_user_id: userId },
+        });
+        
+        // Check if user has enabled in-app notifications for this type
+        if (shouldSendNotification(userSettings, notificationType, 'inapp')) {
+          rows.push({
+            title,
+            message,
+            type,
+            module,
+            reference_id,
+            reference_type,
+            action_url,
+            target_user: userId,
+            target_role: target_role || null,
+          });
+        }
+      } catch (err) {
+        // If there's an error fetching preferences, default to sending the notification
+        console.warn(`[NotificationDispatch] Error fetching preferences for user ${userId}:`, err.message);
+        rows.push({
+          title,
+          message,
+          type,
+          module,
+          reference_id,
+          reference_type,
+          action_url,
+          target_user: userId,
+          target_role: target_role || null,
+        });
+      }
+    }
+  } else {
+    // No notification type specified, create for all users (backward compatibility)
+    rows.push(...targetUsers.map((userId) => ({
+      title,
+      message,
+      type,
+      module,
+      reference_id,
+      reference_type,
+      action_url,
+      target_user: userId,
+      target_role: target_role || null,
+    })));
+  }
 
   return Promise.all(
     rows.map((row) =>
@@ -164,6 +227,7 @@ export async function createWorkflowAudienceNotifications({
   module = 'SYSTEM',
   referenceId = null,
   referenceType = null,
+  notificationType = null, // New parameter for preference checking
 } = {}) {
   const userIds = [...new Set((Array.isArray(targetUsers) ? targetUsers : [targetUsers]).filter(Boolean))];
   if (!workflowAction || !workflowAudience || userIds.length === 0) return [];
@@ -196,6 +260,7 @@ export async function createWorkflowAudienceNotifications({
       reference_id: referenceId || ctx.batchId || null,
       reference_type: referenceType || moduleToObjectType(ctx.module || module),
       target_role: targetRole,
+      notificationType, // Pass it through
     },
     { targetUsers: userIds }
   );

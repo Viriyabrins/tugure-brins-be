@@ -74,6 +74,7 @@ export async function processClaimCheck(claimNo, auditActor = {}, options = {}) 
           module: 'CLAIM',
           reference_id: claimNo,
           target_role: 'ALL',
+          notificationType: 'claim_status',
         });
       } catch (notifErr) {
         console.warn(`Failed to create notifications for claim ${claimNo}:`, notifErr);
@@ -187,6 +188,7 @@ export async function processClaimApproval(claimNo, remarks = '', auditActor = {
           module: 'CLAIM',
           reference_id: claimNo,
           target_role: 'ALL',
+          notificationType: 'claim_status',
         });
       } catch (notifErr) {
         console.warn(`Failed to create notifications for claim ${claimNo}:`, notifErr);
@@ -252,6 +254,7 @@ export async function processClaimRevision(claimNo, remarks = '', auditActor = {
           module: 'CLAIM',
           reference_id: claimNo,
           target_role: 'ALL',
+          notificationType: 'claim_status',
         });
       } catch (notifErr) {
         console.warn(`Failed to create notifications for claim ${claimNo}:`, notifErr);
@@ -321,6 +324,7 @@ export async function createSubrogationEntry(data = {}, auditActor = {}) {
       module: 'SUBROGATION',
       reference_id: subrogationId,
       target_role: 'ALL',
+      notificationType: 'subrogation_status',
     });
   } catch (e) { console.warn('Subrogation notification failed:', e); }
   return subrogationId;
@@ -360,6 +364,7 @@ export async function processSubrogationWorkflow(subId, action, data = {}, audit
         title: 'Subrogation Checked by BRINS',
         message: `BRINS Checker (${actorEmail}) checked subrogation ${subId}.`,
         type: 'INFO', module: 'SUBROGATION', reference_id: subId, target_role: 'ALL',
+        notificationType: 'subrogation_status',
       });
     } catch (e) { console.warn('Notification failed:', e); }
 
@@ -385,6 +390,7 @@ export async function processSubrogationWorkflow(subId, action, data = {}, audit
         title: 'Subrogation Approved by BRINS',
         message: `BRINS Approver (${actorEmail}) approved subrogation ${subId}.`,
         type: 'INFO', module: 'SUBROGATION', reference_id: subId, target_role: 'ALL',
+        notificationType: 'subrogation_status',
       });
     } catch (e) { console.warn('Notification failed:', e); }
 
@@ -410,6 +416,7 @@ export async function processSubrogationWorkflow(subId, action, data = {}, audit
         title: 'Subrogation Checked by TUGURE',
         message: `TUGURE Checker (${actorEmail}) checked subrogation ${subId}.`,
         type: 'INFO', module: 'SUBROGATION', reference_id: subId, target_role: 'ALL',
+        notificationType: 'subrogation_status',
       });
     } catch (e) { console.warn('Notification failed:', e); }
 
@@ -444,6 +451,7 @@ export async function processSubrogationWorkflow(subId, action, data = {}, audit
         title: 'Subrogation Nota Generated',
         message: `Nota ${notaNumber} created for Subrogation ${subId}. Remarks: ${remarks || '-'}`,
         type: 'ACTION_REQUIRED', module: 'SUBROGATION', reference_id: subId, target_role: 'ALL',
+        notificationType: 'subrogation_status',
       });
     } catch (e) { console.warn('Notification failed:', e); }
     try {
@@ -477,6 +485,7 @@ export async function processSubrogationWorkflow(subId, action, data = {}, audit
         title: 'Subrogation Marked for Revision',
         message: `${actorEmail} marked subrogation ${subId} for revision.`,
         type: 'WARNING', module: 'SUBROGATION', reference_id: subId, target_role: 'ALL',
+        notificationType: 'subrogation_status',
       });
     } catch (e) { console.warn('Notification failed:', e); }
 

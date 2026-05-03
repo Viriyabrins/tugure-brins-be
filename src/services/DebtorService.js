@@ -96,6 +96,7 @@ export async function processDebtorCheck(debtorId, auditActor = {}, options = {}
           module: 'DEBTOR',
           reference_id: debtor.batch_id,
           target_role: 'ALL',
+          notificationType: 'record_status',
         });
       } catch (notifError) {
         console.warn(`Failed to create notifications for debtor ${debtorId}:`, notifError);
@@ -225,6 +226,7 @@ export async function processDebtorApproval(debtorId, remarks = '', auditActor =
           module: 'DEBTOR',
           reference_id: debtorId,
           target_role: 'ALL',
+          notificationType: 'record_status',
         });
       } catch (notifError) {
         console.warn(`Failed to create notifications for debtor ${debtorId}:`, notifError);
@@ -301,6 +303,7 @@ export async function processDebtorRevision(debtorId, remarks = '', auditActor =
           module: 'DEBTOR',
           reference_id: debtorId,
           target_role: 'ALL',
+          notificationType: 'record_status',
         });
       } catch (notifError) {
         console.warn(`Failed to create notifications for debtor ${debtorId}:`, notifError);
@@ -450,6 +453,7 @@ export async function processBatchDebtorWorkflowAction(debtorIds, action, remark
         module: 'DEBTOR',
         reference_id: batchId || debtorIds[0],
         target_role: 'ALL',
+        notificationType: 'record_status',
       });
     } catch (notifErr) {
       console.warn('Failed to create batch notification:', notifErr);

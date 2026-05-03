@@ -839,6 +839,7 @@ async function processBulkDebtorActionBackground(jobId, action, queryFilters, re
           module: 'DEBTOR',
           reference_id: batchId,
           target_role: 'ALL',
+          notificationType: 'record_status',
         });
       } catch (notifErr) {
         console.warn(`Failed to create batch notification for job ${jobId}:`, notifErr);

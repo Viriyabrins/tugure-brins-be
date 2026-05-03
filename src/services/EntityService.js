@@ -813,6 +813,7 @@ export default class EntityService {
             module: 'CONFIG',
             referenceType: 'MasterContract',
             referenceId,
+            notificationType: 'contract_status',
           });
         }
 
@@ -829,6 +830,7 @@ export default class EntityService {
           module: 'CONFIG',
           referenceType: 'MasterContract',
           referenceId,
+          notificationType: 'contract_status',
         });
       } catch (notifErr) {
         console.warn('[EntityService] MC upload notification dispatch failed:', notifErr.message);
@@ -913,6 +915,7 @@ export default class EntityService {
           reference_type: 'MasterContract',
           reference_id: id,
           target_role: 'ALL',
+          notificationType: 'contract_status',
         });
       } catch (notifErr) {
         console.warn('[EntityService] MC approval notification dispatch failed:', notifErr.message);
@@ -1031,6 +1034,7 @@ export default class EntityService {
           reference_type: 'MasterContract',
           reference_id: id,
           target_role: 'ALL',
+          notificationType: 'contract_status',
         });
       } catch (notifErr) {
         console.warn('[EntityService] MC workflow notification dispatch failed:', notifErr.message);
@@ -1693,6 +1697,7 @@ export default class EntityService {
           reference_type: 'Debtor',
           reference_id: result.debtors?.[0]?.id || null,
           target_role: 'ALL',
+          notificationType: 'record_status',
         });
       } catch (notifErr) {
         console.warn('[EntityService] Debtor upload notification dispatch failed:', notifErr.message);
@@ -1929,6 +1934,7 @@ export default class EntityService {
             module: 'CLAIM',
             referenceType: 'Subrogation',
             referenceId,
+            notificationType: 'subrogation_status',
           });
         }
 
@@ -1945,6 +1951,7 @@ export default class EntityService {
           module: 'CLAIM',
           referenceType: 'Subrogation',
           referenceId,
+          notificationType: 'subrogation_status',
         });
       } catch (notifErr) {
         console.warn('[EntityService] Subrogation upload notification dispatch failed:', notifErr.message);

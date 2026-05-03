@@ -499,26 +499,57 @@ model Notification {
 }
 
 model NotificationSetting {
-  id                           String  @id @default(cuid())
-  keycloak_user_id             String  @unique
-  full_name                    String
-  user_email                   String
-  user_role                    String
-  notification_email           String?
-  whatsapp_number              String?
-  email_enabled                Boolean @default(true)
-  whatsapp_enabled             Boolean @default(false)
-  notify_batch_status          Boolean @default(true)
-  notify_record_status         Boolean @default(true)
-  notify_nota_status           Boolean @default(true)
-  notify_claim_status          Boolean @default(true)
-  notify_subrogation_status    Boolean @default(true)
-  notify_bordero_status        Boolean @default(true)
-  notify_invoice_status        Boolean @default(true)
-  notify_reconciliation_status Boolean @default(true)
-  notify_payment_received      Boolean @default(true)
-  notify_approval_required     Boolean @default(true)
-  notify_document_verification Boolean @default(true)
+  id                                String  @id @default(cuid())
+  keycloak_user_id                  String  @unique
+  full_name                         String
+  user_email                        String
+  user_role                         String
+  notification_email                String?
+  whatsapp_number                   String?
+  email_enabled                     Boolean @default(true)
+  whatsapp_enabled                  Boolean @default(false)
+  // Legacy fields - kept for backward compatibility
+  notify_batch_status               Boolean @default(true)
+  notify_record_status              Boolean @default(true)
+  notify_nota_status                Boolean @default(true)
+  notify_claim_status               Boolean @default(true)
+  notify_subrogation_status         Boolean @default(true)
+  notify_bordero_status             Boolean @default(true)
+  notify_invoice_status             Boolean @default(true)
+  notify_reconciliation_status      Boolean @default(true)
+  notify_payment_received           Boolean @default(true)
+  notify_approval_required          Boolean @default(true)
+  notify_document_verification      Boolean @default(true)
+  notify_contract_status            Boolean @default(true)
+  notify_debit_credit_note          Boolean @default(true)
+  // Email channel preferences
+  email_notify_contract_status      Boolean @default(true)
+  email_notify_batch_status         Boolean @default(true)
+  email_notify_record_status        Boolean @default(true)
+  email_notify_nota_status          Boolean @default(true)
+  email_notify_claim_status         Boolean @default(true)
+  email_notify_subrogation_status   Boolean @default(true)
+  email_notify_bordero_status       Boolean @default(true)
+  email_notify_invoice_status       Boolean @default(true)
+  email_notify_reconciliation_status Boolean @default(true)
+  email_notify_payment_received     Boolean @default(true)
+  email_notify_approval_required    Boolean @default(true)
+  email_notify_document_verification Boolean @default(true)
+  email_notify_debit_credit_note    Boolean @default(true)
+  // In-app notification preferences
+  inapp_notify_contract_status      Boolean @default(true)
+  inapp_notify_batch_status         Boolean @default(true)
+  inapp_notify_record_status        Boolean @default(true)
+  inapp_notify_nota_status          Boolean @default(true)
+  inapp_notify_claim_status         Boolean @default(true)
+  inapp_notify_subrogation_status   Boolean @default(true)
+  inapp_notify_bordero_status       Boolean @default(true)
+  inapp_notify_invoice_status       Boolean @default(true)
+  inapp_notify_reconciliation_status Boolean @default(true)
+  inapp_notify_payment_received     Boolean @default(true)
+  inapp_notify_approval_required    Boolean @default(true)
+  inapp_notify_document_verification Boolean @default(true)
+  inapp_notify_debit_credit_note    Boolean @default(true)
   @@map("notificationsetting")
 }
 
