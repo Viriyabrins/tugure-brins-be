@@ -1,3 +1,5 @@
+import { createNotificationFanout } from './NotificationDispatchService.js';
+
 export default class NotificationService {
   constructor({ notificationRepository }) {
     this.repository = notificationRepository;
@@ -8,6 +10,8 @@ export default class NotificationService {
   }
 
   async createNotification(payload) {
+    const created = await createNotificationFanout(payload);
+    if (created.length > 0) return created;
     return this.repository.create(payload);
   }
 

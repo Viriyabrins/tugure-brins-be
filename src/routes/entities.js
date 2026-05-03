@@ -177,6 +177,12 @@ export default async function (fastify) {
   );
 
   fastify.post(
+    '/apps/:appId/subrogations/upload',
+    { preHandler: fastify.authenticate },
+    controller.uploadSubrogations.bind(controller)
+  );
+
+  fastify.post(
     '/apps/:appId/subrogations/:subId/workflow-action',
     { preHandler: fastify.authenticate },
     controller.processSubrogationWorkflowAction.bind(controller)

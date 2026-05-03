@@ -1,4 +1,5 @@
 import prisma from '../prisma/client.js';
+import { createNotificationFanout } from './NotificationDispatchService.js';
 
 /**
  * ClaimService: Encapsulates business logic for claim workflow actions.
@@ -6,8 +7,6 @@ import prisma from '../prisma/client.js';
  * - BRINS checker/approver handle the first two stages
  * - TUGURE checker/approver handle the final two stages
  */
-
-const ALL_ROLES = ['maker-brins-role', 'checker-brins-role', 'approver-brins-role', 'checker-tugure-role', 'approver-tugure-role'];
 
 /**
  * Process single claim CHECK action
@@ -68,18 +67,14 @@ export async function processClaimCheck(claimNo, auditActor = {}, options = {}) 
     const { emitNotification = true } = options;
     if (emitNotification) {
       try {
-        for (const role of ALL_ROLES) {
-          await prisma.notification.create({
-            data: {
-              title: newStatus === 'CHECKED_BRINS' ? 'Claim Checked by BRINS' : 'Claim Checked by TUGURE',
-              message: `${actionType} (${actorEmail}) checked claim ${claimNo}.`,
-              type: 'INFO',
-              module: 'CLAIM',
-              reference_id: claimNo,
-              target_role: role,
-            },
-          });
-        }
+        await createNotificationFanout({
+          title: newStatus === 'CHECKED_BRINS' ? 'Claim Checked by BRINS' : 'Claim Checked by TUGURE',
+          message: `${actionType} (${actorEmail}) checked claim ${claimNo}.`,
+          type: 'INFO',
+          module: 'CLAIM',
+          reference_id: claimNo,
+          target_role: 'ALL',
+        });
       } catch (notifErr) {
         console.warn(`Failed to create notifications for claim ${claimNo}:`, notifErr);
       }
@@ -185,18 +180,14 @@ export async function processClaimApproval(claimNo, remarks = '', auditActor = {
     const { emitNotification = true } = options;
     if (emitNotification) {
       try {
-        for (const role of ALL_ROLES) {
-          await prisma.notification.create({
-            data: {
-              title: newStatus === 'APPROVED_BRINS' ? 'Claim Approved by BRINS' : 'Claim Approved (Final)',
-              message: `${actionType} (${actorEmail}) approved claim ${claimNo}.`,
-              type: 'INFO',
-              module: 'CLAIM',
-              reference_id: claimNo,
-              target_role: role,
-            },
-          });
-        }
+        await createNotificationFanout({
+          title: newStatus === 'APPROVED_BRINS' ? 'Claim Approved by BRINS' : 'Claim Approved (Final)',
+          message: `${actionType} (${actorEmail}) approved claim ${claimNo}.`,
+          type: 'INFO',
+          module: 'CLAIM',
+          reference_id: claimNo,
+          target_role: 'ALL',
+        });
       } catch (notifErr) {
         console.warn(`Failed to create notifications for claim ${claimNo}:`, notifErr);
       }
@@ -254,18 +245,14 @@ export async function processClaimRevision(claimNo, remarks = '', auditActor = {
     const { emitNotification = true } = options;
     if (emitNotification) {
       try {
-        for (const role of ALL_ROLES) {
-          await prisma.notification.create({
-            data: {
-              title: 'Claim Marked for Revision',
-              message: `${actorEmail} marked claim ${claimNo} for revision.`,
-              type: 'WARNING',
-              module: 'CLAIM',
-              reference_id: claimNo,
-              target_role: role,
-            },
-          });
-        }
+        await createNotificationFanout({
+          title: 'Claim Marked for Revision',
+          message: `${actorEmail} marked claim ${claimNo} for revision.`,
+          type: 'WARNING',
+          module: 'CLAIM',
+          reference_id: claimNo,
+          target_role: 'ALL',
+        });
       } catch (notifErr) {
         console.warn(`Failed to create notifications for claim ${claimNo}:`, notifErr);
       }
@@ -327,18 +314,14 @@ export async function createSubrogationEntry(data = {}, auditActor = {}) {
     });
   } catch (e) { console.warn('Subrogation audit failed:', e); }
   try {
-    for (const role of ALL_ROLES) {
-      await prisma.notification.create({
-        data: {
-          title: 'New Subrogation Created',
-          message: `Subrogation ${subrogationId} created for claim ${data.claimId}`,
-          type: 'INFO',
-          module: 'SUBROGATION',
-          reference_id: subrogationId,
-          target_role: role,
-        },
-      });
-    }
+    await createNotificationFanout({
+      title: 'New Subrogation Created',
+      message: `Subrogation ${subrogationId} created for claim ${data.claimId}`,
+      type: 'INFO',
+      module: 'SUBROGATION',
+      reference_id: subrogationId,
+      target_role: 'ALL',
+    });
   } catch (e) { console.warn('Subrogation notification failed:', e); }
   return subrogationId;
 }
@@ -373,15 +356,11 @@ export async function processSubrogationWorkflow(subId, action, data = {}, audit
       });
     } catch (e) { console.warn('Audit failed:', e); }
     try {
-      for (const role of ALL_ROLES) {
-        await prisma.notification.create({
-          data: {
-            title: 'Subrogation Checked by BRINS',
-            message: `BRINS Checker (${actorEmail}) checked subrogation ${subId}.`,
-            type: 'INFO', module: 'SUBROGATION', reference_id: subId, target_role: role,
-          },
-        });
-      }
+      await createNotificationFanout({
+        title: 'Subrogation Checked by BRINS',
+        message: `BRINS Checker (${actorEmail}) checked subrogation ${subId}.`,
+        type: 'INFO', module: 'SUBROGATION', reference_id: subId, target_role: 'ALL',
+      });
     } catch (e) { console.warn('Notification failed:', e); }
 
   } else if (action === 'approve_brins') {
@@ -402,15 +381,11 @@ export async function processSubrogationWorkflow(subId, action, data = {}, audit
       });
     } catch (e) { console.warn('Audit failed:', e); }
     try {
-      for (const role of ALL_ROLES) {
-        await prisma.notification.create({
-          data: {
-            title: 'Subrogation Approved by BRINS',
-            message: `BRINS Approver (${actorEmail}) approved subrogation ${subId}.`,
-            type: 'INFO', module: 'SUBROGATION', reference_id: subId, target_role: role,
-          },
-        });
-      }
+      await createNotificationFanout({
+        title: 'Subrogation Approved by BRINS',
+        message: `BRINS Approver (${actorEmail}) approved subrogation ${subId}.`,
+        type: 'INFO', module: 'SUBROGATION', reference_id: subId, target_role: 'ALL',
+      });
     } catch (e) { console.warn('Notification failed:', e); }
 
   } else if (action === 'check_tugure') {
@@ -431,15 +406,11 @@ export async function processSubrogationWorkflow(subId, action, data = {}, audit
       });
     } catch (e) { console.warn('Audit failed:', e); }
     try {
-      for (const role of ALL_ROLES) {
-        await prisma.notification.create({
-          data: {
-            title: 'Subrogation Checked by TUGURE',
-            message: `TUGURE Checker (${actorEmail}) checked subrogation ${subId}.`,
-            type: 'INFO', module: 'SUBROGATION', reference_id: subId, target_role: role,
-          },
-        });
-      }
+      await createNotificationFanout({
+        title: 'Subrogation Checked by TUGURE',
+        message: `TUGURE Checker (${actorEmail}) checked subrogation ${subId}.`,
+        type: 'INFO', module: 'SUBROGATION', reference_id: subId, target_role: 'ALL',
+      });
     } catch (e) { console.warn('Notification failed:', e); }
 
   } else if (action === 'approve') {
@@ -469,15 +440,11 @@ export async function processSubrogationWorkflow(subId, action, data = {}, audit
       },
     });
     try {
-      for (const role of ALL_ROLES) {
-        await prisma.notification.create({
-          data: {
-            title: 'Subrogation Nota Generated',
-            message: `Nota ${notaNumber} created for Subrogation ${subId}. Remarks: ${remarks || '-'}`,
-            type: 'ACTION_REQUIRED', module: 'SUBROGATION', reference_id: subId, target_role: role,
-          },
-        });
-      }
+      await createNotificationFanout({
+        title: 'Subrogation Nota Generated',
+        message: `Nota ${notaNumber} created for Subrogation ${subId}. Remarks: ${remarks || '-'}`,
+        type: 'ACTION_REQUIRED', module: 'SUBROGATION', reference_id: subId, target_role: 'ALL',
+      });
     } catch (e) { console.warn('Notification failed:', e); }
     try {
       await prisma.auditLog.create({
@@ -506,15 +473,11 @@ export async function processSubrogationWorkflow(subId, action, data = {}, audit
       });
     } catch (e) { console.warn('Audit failed:', e); }
     try {
-      for (const role of ALL_ROLES) {
-        await prisma.notification.create({
-          data: {
-            title: 'Subrogation Marked for Revision',
-            message: `${actorEmail} marked subrogation ${subId} for revision.`,
-            type: 'WARNING', module: 'SUBROGATION', reference_id: subId, target_role: role,
-          },
-        });
-      }
+      await createNotificationFanout({
+        title: 'Subrogation Marked for Revision',
+        message: `${actorEmail} marked subrogation ${subId} for revision.`,
+        type: 'WARNING', module: 'SUBROGATION', reference_id: subId, target_role: 'ALL',
+      });
     } catch (e) { console.warn('Notification failed:', e); }
 
   } else {

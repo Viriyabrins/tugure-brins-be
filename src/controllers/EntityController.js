@@ -4,11 +4,9 @@ import * as jobQueue from '../utils/jobQueue.js';
 import * as DebtorService from '../services/DebtorService.js';
 import * as ClaimService from '../services/ClaimService.js';
 import prisma from '../prisma/client.js';
-import { NotificationRepository } from '../repositories/NotificationRepository.js';
 import * as WorkflowEmailService from '../services/WorkflowEmailService.js';
+import { createNotificationFanout } from '../services/NotificationDispatchService.js';
 import * as NotaService from '../services/NotaService.js';
-
-const ALL_ROLES = ['maker-brins-role', 'checker-brins-role', 'approver-brins-role', 'checker-tugure-role', 'approver-tugure-role'];
 
 export default class EntityController {
   constructor({ entityService }) {
@@ -184,16 +182,22 @@ export default class EntityController {
 
   async validateSubrogation(request, reply) {
     try {
-      const result = this.entityService.validateSubrogationPayload(request.body || {});
+      const rows = Array.isArray(request.body?.rows) ? request.body.rows : [];
+      if (rows.length === 0) {
+        return sendError(reply, new Error('No data rows were submitted for validation.'), 400);
+      }
+      const result = await this.entityService.validateSubrogationRawRows(rows);
       if (!result.valid) {
         const summary = result.errors
-          .map((e) => `"${e.field}": value "${e.value}" is not a valid ${e.expected}`)
+          .slice(0, 20)
+          .map((e) => `Row ${e.row} – "${e.field}": value "${e.value}" is not a valid ${e.expected}`)
           .join('\n');
-        const error = new Error(`Subrogation validation failed:\n${summary}`);
+        const more = result.errors.length > 20 ? `\n... and ${result.errors.length - 20} more error(s).` : '';
+        const error = new Error(`Validation failed. ${result.errors.length} error(s) found:\n${summary}${more}`);
         error.statusCode = 422;
         return sendError(reply, error, 422);
       }
-      return sendSuccess(reply, { valid: true }, 'Validation successful.');
+      return sendSuccess(reply, { valid: true, rowCount: rows.length }, 'Validation successful.');
     } catch (error) {
       return sendError(reply, error, error.statusCode || 500);
     }
@@ -265,6 +269,39 @@ export default class EntityController {
         isReviseMode
           ? 'Revisi debtor berhasil diproses'
           : 'Debtors uploaded successfully'
+      );
+    } catch (error) {
+      return sendError(reply, error, error.statusCode || 500);
+    }
+  }
+
+  async uploadSubrogations(request, reply) {
+    try {
+      const result = await this.entityService.uploadSubrogationsAtomic(
+        request.body,
+        {
+          user: request.user,
+          ipAddress: request.ip,
+          headers: request.headers,
+        }
+      );
+
+      // Fire-and-forget upload email
+      const uploaderEmail = request.user?.email;
+      const firstSubrogationId = result.subrogations?.[0]?.subrogation_id;
+      if (firstSubrogationId && uploaderEmail) {
+        WorkflowEmailService.sendUploadEmail({
+          uploaderEmail,
+          batchId: firstSubrogationId,
+          module: 'CLAIM',
+          count: result.createdCount,
+        });
+      }
+
+      return sendCreated(
+        reply,
+        result,
+        'Subrogations uploaded successfully'
       );
     } catch (error) {
       return sendError(reply, error, error.statusCode || 500);
@@ -793,19 +830,16 @@ async function processBulkDebtorActionBackground(jobId, action, queryFilters, re
     // Create batch-level notification (one per role) when job finishes and batchId is provided
     if (processedCount > 0 && batchId) {
       try {
-        const notifRepo = new NotificationRepository();
         const notifTitle = `Bulk ${action} completed for batch ${batchId}`;
         const notifMessage = `Bulk ${action} completed: ${processedCount} succeeded, ${failedCount} failed.`;
-        for (const role of ALL_ROLES) {
-          await notifRepo.create({
-            title: notifTitle,
-            message: notifMessage,
-            type: 'INFO',
-            module: 'DEBTOR',
-            reference_id: batchId,
-            target_role: role,
-          });
-        }
+        await createNotificationFanout({
+          title: notifTitle,
+          message: notifMessage,
+          type: 'INFO',
+          module: 'DEBTOR',
+          reference_id: batchId,
+          target_role: 'ALL',
+        });
       } catch (notifErr) {
         console.warn(`Failed to create batch notification for job ${jobId}:`, notifErr);
       }

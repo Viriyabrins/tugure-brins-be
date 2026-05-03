@@ -8,8 +8,10 @@ export default class NotificationController {
 
   async list(request, reply) {
     try {
+      const authenticatedUserId = request.user?.id || null;
       const filters = {
         target_role: request.query.target_role,
+        target_user: authenticatedUserId || request.query.target_user,
         unreadOnly: request.query.unread === 'true',
         limit: Number(request.query.limit) || 100,
         page: Number(request.query.page) || 1
