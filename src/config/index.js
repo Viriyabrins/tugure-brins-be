@@ -48,8 +48,11 @@ const config = {
   keycloakUrl: process.env.KEYCLOAK_URL || process.env.VITE_KEYCLOAK_URL,
   // Multi-realm login configuration
   keycloakScope: process.env.KEYCLOAK_SCOPE || 'openid',
+  keycloakRealmMaster: process.env.KEYCLOAK_REALM_MASTER || 'master',
   keycloakRealmBrins: process.env.KEYCLOAK_REALM_BRINS || 'brins',
   keycloakRealmTugure: process.env.KEYCLOAK_REALM_TUGURE || 'tugure',
+  keycloakClientIdMaster: process.env.KEYCLOAK_CLIENT_ID_MASTER,
+  keycloakClientSecretMaster: process.env.KEYCLOAK_CLIENT_SECRET_MASTER,
   keycloakClientIdBrins: process.env.KEYCLOAK_CLIENT_ID_BRINS,
   keycloakClientSecretBrins: process.env.KEYCLOAK_CLIENT_SECRET_BRINS,
   keycloakClientIdTugure: process.env.KEYCLOAK_CLIENT_ID_TUGURE,

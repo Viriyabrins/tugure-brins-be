@@ -39,6 +39,7 @@ export default async function buildServer() {
   // because the browser always attaches X-Signature headers via withSignatureHeaders().
   // The /api/db-channel/stream SSE route is exempted because it uses a long-lived
   // connection that cannot be re-signed per-request.
+  // Admin routes are exempted because they are internal and require JWT auth + isSuperAdmin check.
   fastify.addHook('onRequest', async (request, reply) => {
     // Only validate routes under the /api prefix
     if (!request.url?.startsWith('/api')) return;
@@ -49,6 +50,8 @@ export default async function buildServer() {
     if (requestPath === '/api/time') return;
     // Exempt SSE streaming (long-lived connection, cannot carry per-request signature)
     if (request.url.includes('/db-channel/stream')) return;
+    // Exempt admin routes (internal API, protected by JWT + isSuperAdmin check)
+    if (request.url.startsWith('/api/admin')) return;
     await fastify.verifySignature(request, reply);
   });
 

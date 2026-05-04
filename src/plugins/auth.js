@@ -63,6 +63,9 @@ export default fp(async (fastify) => {
       const resourceRoles = Object.values(resourceMap).flatMap(r => r.roles || []);
       const allRoles = [...realmRoles, ...resourceRoles];
 
+      // Detect superadmin: username "viriya" with "admin" role
+      const isSuperAdmin = payload.preferred_username === 'viriya' && allRoles.includes('admin');
+
       request.user = {
         id: payload.sub,
         full_name: payload.name || '',
@@ -70,6 +73,7 @@ export default fp(async (fastify) => {
         preferredUsername: payload.preferred_username || payload.email || '',
         role: 'USER',
         application_roles: allRoles,
+        isSuperAdmin,
         token,
       };
       return;

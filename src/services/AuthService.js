@@ -54,12 +54,24 @@ export default class AuthService {
   }
 
   /**
-   * Resolve Keycloak realm and client credentials from email domain.
-   * @param {string} email
+   * Resolve Keycloak realm and client credentials from email domain or username.
+   * Handles special case: "viriya" username routes to master realm.
+   * @param {string} emailOrUsername
    * @returns {{ realm: string, clientId: string, clientSecret: string }}
    */
-  resolveRealm(email) {
-    const domain = email.toLowerCase().split('@')[1];
+  resolveRealm(emailOrUsername) {
+    const normalized = emailOrUsername.toLowerCase().trim();
+    
+    // Special case: viriya admin user authenticates against master realm
+    if (normalized === 'viriya') {
+      return {
+        realm: this.config.keycloakRealmMaster,
+        clientId: this.config.keycloakClientIdMaster,
+        clientSecret: this.config.keycloakClientSecretMaster,
+      };
+    }
+
+    const domain = normalized.split('@')[1];
     const realmKey = DOMAIN_REALM_MAP[domain];
 
     if (!realmKey) {
@@ -96,10 +108,11 @@ export default class AuthService {
       throw error;
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedInput = email.toLowerCase().trim();
 
-    if (!normalizedEmail.includes('@')) {
-      const error = new Error('Invalid email format');
+    // Allow "viriya" username or standard email format
+    if (!normalizedInput.includes('@') && normalizedInput !== 'viriya') {
+      const error = new Error('Invalid email format (or use "viriya" for admin login)');
       error.statusCode = 400;
       throw error;
     }
@@ -111,7 +124,7 @@ export default class AuthService {
       throw error;
     }
 
-    const { realm, clientId, clientSecret } = this.resolveRealm(normalizedEmail);
+    const { realm, clientId, clientSecret } = this.resolveRealm(normalizedInput);
     const scope = this.config.keycloakScope || 'openid';
 
     const tokenUrl = `${keycloakUrl.replace(/\/$/, '')}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/token`;
@@ -120,7 +133,7 @@ export default class AuthService {
       grant_type: 'password',
       client_id: clientId,
       client_secret: clientSecret,
-      username: normalizedEmail,
+      username: normalizedInput,
       password,
       scope,
     });
@@ -171,6 +184,13 @@ export default class AuthService {
     const realmMatch = iss.match(/\/realms\/([^/]+)$/);
     const detectedRealm = realmMatch?.[1];
 
+    if (detectedRealm === this.config.keycloakRealmMaster) {
+      return {
+        realm: this.config.keycloakRealmMaster,
+        clientId: this.config.keycloakClientIdMaster,
+        clientSecret: this.config.keycloakClientSecretMaster,
+      };
+    }
     if (detectedRealm === this.config.keycloakRealmBrins) {
       return {
         realm: this.config.keycloakRealmBrins,
